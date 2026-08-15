@@ -41,10 +41,9 @@ def check_policy(prompt, policy_text, api_key, judge_model=None):
     if not policy_text:
         return {"violates": False, "clause": "", "reason": ""}
 
-    model = judge_model or config.JUDGE_MODEL
-    llm_prompt = POLICY_PROMPT_TEMPLATE.format(policy=policy_text, prompt=prompt)
-
     try:
+        model = judge_model or config.JUDGE_MODEL
+        llm_prompt = POLICY_PROMPT_TEMPLATE.format(policy=policy_text, prompt=prompt)
         result = openrouter.call_model(model, [{"role": "user", "content": llm_prompt}], api_key=api_key)
         parsed = _extract_json(result["text"])
         violates = bool(parsed["violates"])
