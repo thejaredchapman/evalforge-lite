@@ -22,13 +22,13 @@ def call_model(model_id, messages, api_key, timeout=60):
             timeout=timeout,
         )
         resp.raise_for_status()
+        data = resp.json()
     except requests.RequestException as e:
         raise OpenRouterError(str(e)) from e
-    except Exception as e:
-        raise OpenRouterError(str(e)) from e
+    except ValueError as e:
+        raise OpenRouterError(f"Malformed JSON in OpenRouter response: {str(e)}") from e
 
     latency_ms = int((time.monotonic() - start) * 1000)
-    data = resp.json()
 
     try:
         text = data["choices"][0]["message"]["content"]

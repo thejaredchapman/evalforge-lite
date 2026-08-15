@@ -71,3 +71,15 @@ def test_call_model_defaults_missing_cost_to_zero(mock_post):
     result = openrouter.call_model("openai/gpt-4o-mini", [{"role": "user", "content": "hi"}], api_key="sk-or-v1-test")
 
     assert result["cost_usd"] == 0.0
+
+
+@patch("openrouter.requests.post")
+def test_call_model_raises_openrouter_error_on_malformed_json(mock_post):
+    resp = Mock()
+    resp.raise_for_status.return_value = None
+    resp.json.side_effect = ValueError("Expecting value")
+
+    mock_post.return_value = resp
+
+    with pytest.raises(openrouter.OpenRouterError):
+        openrouter.call_model("openai/gpt-4o-mini", [{"role": "user", "content": "hi"}], api_key="sk-or-v1-test")
