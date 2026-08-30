@@ -2,6 +2,7 @@ const state = {
   catalog: null,
   testCases: [],
   selectedModels: new Set(),
+  customModels: [],
   runs: [],       // full /api/run responses seen this page load, oldest first
   activeRunId: null,
 };
@@ -74,6 +75,39 @@ async function toggleModel(modelId, el, color) {
       document.getElementById("run-status").textContent = `Also consider: ${names}`;
     }
   }
+}
+
+function addCustomModel() {
+  const input = document.getElementById("custom-model-input");
+  const modelId = input.value.trim();
+  if (!modelId || state.selectedModels.has(modelId)) return;
+  state.selectedModels.add(modelId);
+  state.customModels.push(modelId);
+  input.value = "";
+  renderCustomModels();
+}
+
+function removeCustomModel(modelId) {
+  state.selectedModels.delete(modelId);
+  state.customModels = state.customModels.filter((id) => id !== modelId);
+  renderCustomModels();
+}
+
+function renderCustomModels() {
+  const container = document.getElementById("custom-model-list");
+  container.innerHTML = "";
+  state.customModels.forEach((modelId) => {
+    const chip = document.createElement("span");
+    chip.className = "custom-model-chip";
+    chip.textContent = modelId;
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.setAttribute("aria-label", `Remove ${modelId}`);
+    removeButton.textContent = "×";
+    removeButton.addEventListener("click", () => removeCustomModel(modelId));
+    chip.appendChild(removeButton);
+    container.appendChild(chip);
+  });
 }
 
 function addTestCase() {
@@ -237,6 +271,13 @@ function downloadCsv() {
 }
 
 document.getElementById("add-testcase").addEventListener("click", addTestCase);
+document.getElementById("add-custom-model").addEventListener("click", addCustomModel);
+document.getElementById("custom-model-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    addCustomModel();
+  }
+});
 document.getElementById("run-button").addEventListener("click", runComparison);
 document.getElementById("download-report").addEventListener("click", downloadReport);
 document.getElementById("download-csv").addEventListener("click", downloadCsv);
