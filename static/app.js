@@ -1,5 +1,7 @@
 const state = {
   catalog: null,
+  allModels: [],  // OpenRouter's full live catalog, used for autocomplete and the
+                  // "+N more" expansion under each curated provider section
   testCases: [],
   selectedModels: new Set(),
   customModels: [],
@@ -17,30 +19,33 @@ function letterToClass(letter) {
   return `grade-${letter[0].toLowerCase()}`;
 }
 
-async function loadCatalog() {
-  const resp = await fetch("/api/catalog");
-  const data = await resp.json();
-  state.catalog = data;
-  renderFrontier(data.frontier);
-  renderProviders(data.providers);
+async function loadCatalogAndModels() {
+  // Fetched together and rendered only once both resolve, so renderProviders()
+  // always has state.allModels available for its "+N more" expansion — rendering
+  // providers before the live list arrives would show 0 "more" models every time.
+  const catalogPromise = fetch("/api/catalog").then((r) => r.json());
+  const modelsPromise = fetch("/api/openrouter-models")
+    .then((r) => r.json())
+    .catch(() => ({ models: [] })); // autocomplete/expansion is a convenience, fails soft
+
+  const [catalogData, modelsData] = await Promise.all([catalogPromise, modelsPromise]);
+  state.catalog = catalogData;
+  state.allModels = modelsData.models || [];
+
+  renderFrontier(catalogData.frontier);
+  renderProviders(catalogData.providers);
+  populateModelsDatalist(state.allModels);
 }
 
-async function loadAllModelsDatalist() {
-  try {
-    const resp = await fetch("/api/openrouter-models");
-    const data = await resp.json();
-    const datalist = document.getElementById("all-models-datalist");
-    datalist.innerHTML = "";
-    (data.models || []).forEach((model) => {
-      const option = document.createElement("option");
-      option.value = model.id;
-      option.label = model.name;
-      datalist.appendChild(option);
-    });
-  } catch (e) {
-    // Autocomplete is a convenience, not core functionality — fail silently
-    // and leave the custom model input usable without suggestions.
-  }
+function populateModelsDatalist(models) {
+  const datalist = document.getElementById("all-models-datalist");
+  datalist.innerHTML = "";
+  models.forEach((model) => {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.label = model.name;
+    datalist.appendChild(option);
+  });
 }
 
 function renderFrontier(frontier) {
@@ -63,6 +68,32 @@ function renderProviders(providers) {
     grid.className = "model-grid";
     provider.models.forEach((model) => grid.appendChild(modelBadge(model, provider.color)));
     block.appendChild(grid);
+
+    const curatedIds = new Set(provider.models.map((m) => m.id));
+    const moreModels = state.allModels.filter(
+      (m) => m.id.startsWith(`${providerId}/`) && !curatedIds.has(m.id)
+    );
+    if (moreModels.length > 0) {
+      const moreGrid = document.createElement("div");
+      moreGrid.className = "model-grid";
+      moreGrid.hidden = true;
+      moreModels.forEach((model) => moreGrid.appendChild(modelBadge(model, provider.color)));
+
+      const expandedLabel = "Show fewer";
+      const collapsedLabel = `+ ${moreModels.length} more from OpenRouter's live catalog`;
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "secondary show-more-btn";
+      toggle.textContent = collapsedLabel;
+      toggle.addEventListener("click", () => {
+        moreGrid.hidden = !moreGrid.hidden;
+        toggle.textContent = moreGrid.hidden ? collapsedLabel : expandedLabel;
+      });
+
+      block.appendChild(toggle);
+      block.appendChild(moreGrid);
+    }
+
     container.appendChild(block);
   });
 }
@@ -421,6 +452,5 @@ document.querySelectorAll("#mobile-menu a").forEach((link) => {
   link.addEventListener("click", () => toggleMenu(false));
 });
 
-loadCatalog();
-loadAllModelsDatalist();
+loadCatalogAndModels();
 addTestCase();
