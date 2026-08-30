@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>EvalForge Lite</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>EvalForge <span class="accent-brand">Lite</span></h1>
+    <p class="tagline">Compare text LLMs across providers with your own OpenRouter key.</p>
+  </header>
+
+  <section id="api-key-section" class="card">
+    <label for="api-key">OpenRouter API key</label>
+    <input type="password" id="api-key" placeholder="sk-or-v1-...">
+    <span id="api-key-status" class="status-text"></span>
+  </section>
+
+  <section id="catalog-section">
+    <h2>Frontier models</h2>
+    <div id="frontier-list" class="model-grid"></div>
+
+    <h2>Browse by provider</h2>
+    <div id="provider-list"></div>
+  </section>
+
+  <section id="policy-section" class="card">
+    <h2>Company policy (optional)</h2>
+    <input type="file" id="policy-file" accept=".txt,.md,.pdf">
+    <span id="policy-status" class="status-text"></span>
+  </section>
+
+  <section id="testcase-section">
+    <h2>Test cases</h2>
+    <div id="testcase-list"></div>
+    <button id="add-testcase" class="secondary">+ Add test case</button>
+  </section>
+
+  <section id="run-section">
+    <button id="run-button">Run comparison</button>
+    <span id="run-status" class="status-text"></span>
+  </section>
+
+  <section id="history-section" class="card" hidden>
+    <h2>Recent runs</h2>
+    <div id="history-strip" class="history-strip"></div>
+  </section>
+
+  <section id="results-section" hidden>
+    <h2>Overall verdict</h2>
+    <div id="verdict-banner" class="card"></div>
+
+    <h2>Leaderboard</h2>
+    <div id="leaderboard" class="card leaderboard"></div>
+
+    <h2>Results</h2>
+    <div id="results-grid"></div>
+
+    <div class="download-row">
+      <button id="download-report" class="secondary">Download PDF report</button>
+      <button id="download-csv" class="secondary">Download CSV</button>
+    </div>
+  </section>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
