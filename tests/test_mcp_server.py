@@ -30,6 +30,14 @@ def test_set_policy_stores_text():
     assert mcp_server._policy_text == "No medical advice."
 
 
+@patch("mcp_server.judge.evaluate_prompt")
+def test_evaluate_prompt_returns_score_and_feedback(mock_evaluate):
+    mock_evaluate.return_value = {"score": 2, "feedback": "Too vague."}
+    result = mcp_server.evaluate_prompt("Tell me stuff", api_key="sk-or-v1-test")
+    assert result == {"score": 2, "feedback": "Too vague."}
+    mock_evaluate.assert_called_once_with("Tell me stuff", api_key="sk-or-v1-test")
+
+
 def test_run_comparison_missing_api_key_returns_error():
     result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"], api_key="")
     assert "error" in result

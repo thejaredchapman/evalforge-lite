@@ -48,6 +48,16 @@ def set_policy(policy_text: str) -> dict:
     return {"ok": True}
 
 
+@mcp.tool()
+def evaluate_prompt(prompt: str, api_key: str) -> dict:
+    """Get pre-run feedback on a prompt's clarity/specificity before running a comparison.
+
+    An explicit, separately-triggered LLM call (uses your API key) — not run
+    automatically as part of run_comparison.
+    """
+    return judge.evaluate_prompt(prompt, api_key=api_key)
+
+
 def _aggregate_stats(results, model_ids):
     stats = {
         m: {

@@ -187,6 +187,9 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
   gap: 8px;
 }
 
+.testcase-eval-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.eval-feedback { font-size: 12px; color: var(--muted); }
+
 .history-strip { display: flex; flex-wrap: wrap; gap: 8px; }
 .history-tab {
   border: 1px solid var(--border);

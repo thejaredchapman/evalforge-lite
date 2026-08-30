@@ -58,9 +58,10 @@ Claude Code) pointing at this venv's Python and this file:
 }
 ```
 
-Exposes 7 tools: `list_models`, `suggest_models`, `set_policy`, `run_comparison`,
-`list_runs`, `get_report`, `get_report_csv` — the same functionality as the web
-app's API, minus file-upload policy support (`set_policy` takes plain text).
+Exposes 8 tools: `list_models`, `suggest_models`, `set_policy`, `evaluate_prompt`,
+`run_comparison`, `list_runs`, `get_report`, `get_report_csv` — the same
+functionality as the web app's API, minus file-upload policy support
+(`set_policy` takes plain text).
 State (policy, run history, rate limit) is per-process, since one stdio
 connection is one client. It's a local-only interface (stdio requires the
 server to run on the same machine as the client) — there's nothing to
@@ -118,8 +119,16 @@ suite needs no API key and makes no network calls.
 - Optional company-policy gate that blocks prompts violating the policy
   before any model is called (upload `.txt`/`.md`/`.pdf` in the web app;
   pass plain text via the `set_policy` MCP tool).
-- Leaderboard with letter grades, per-model cost/latency summary, and an
-  overall verdict.
+- Leaderboard with letter grades, a category breakdown (accuracy,
+  rule-check pass rate, cost-efficiency, speed — cost/speed scored
+  relative to the other models in the same run), and colorful charts of
+  those scores in both the web view and the PDF report.
+- Per-prompt best-model recommendation: for each test case, which model
+  handled that specific prompt best and why — computed from data already
+  collected, no extra LLM call.
+- Optional pre-run prompt quality feedback (an explicit "Evaluate prompt"
+  action, not automatic) — clarity/specificity feedback before you spend
+  a real run on a prompt that might need rewording.
 - Download results as a PDF report or a CSV for spreadsheet analysis.
 - The last 5 runs per session (browser cookie, or MCP server process)
   stay available to revisit or re-download without re-running them.

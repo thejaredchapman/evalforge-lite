@@ -134,6 +134,34 @@ function addTestCase() {
   renderTestCases();
 }
 
+async function evaluatePrompt(idx) {
+  const feedbackEl = document.querySelector(`.eval-feedback[data-idx="${idx}"]`);
+  const prompt = state.testCases[idx].prompt.trim();
+
+  if (!apiKey()) {
+    feedbackEl.textContent = "Enter your OpenRouter API key first.";
+    return;
+  }
+  if (!prompt) {
+    feedbackEl.textContent = "Write a prompt first.";
+    return;
+  }
+
+  feedbackEl.textContent = "Evaluating...";
+  const resp = await fetch("/api/evaluate-prompt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, api_key: apiKey() }),
+  });
+  const data = await resp.json();
+
+  if (!resp.ok || data.score === null) {
+    feedbackEl.textContent = data.feedback || data.error || "Could not evaluate prompt.";
+    return;
+  }
+  feedbackEl.textContent = `${data.score}/5 — ${data.feedback}`;
+}
+
 function renderTestCases() {
   const container = document.getElementById("testcase-list");
   container.innerHTML = "";
@@ -143,6 +171,10 @@ function renderTestCases() {
     row.innerHTML = `
       <textarea placeholder="Prompt" data-idx="${i}" data-field="prompt">${tc.prompt}</textarea>
       <input type="text" placeholder="Rubric (optional)" data-idx="${i}" data-field="rubric" value="${tc.rubric}">
+      <div class="testcase-eval-row">
+        <button type="button" class="secondary evaluate-prompt-btn" data-idx="${i}">Evaluate prompt</button>
+        <span class="eval-feedback" data-idx="${i}"></span>
+      </div>
     `;
     container.appendChild(row);
   });
@@ -151,6 +183,9 @@ function renderTestCases() {
       const idx = Number(e.target.dataset.idx);
       state.testCases[idx][e.target.dataset.field] = e.target.value;
     });
+  });
+  container.querySelectorAll(".evaluate-prompt-btn").forEach((el) => {
+    el.addEventListener("click", (e) => evaluatePrompt(Number(e.target.dataset.idx)));
   });
 }
 
