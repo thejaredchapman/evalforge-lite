@@ -149,6 +149,9 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
 .provider-blurb { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
 .provider-blurb a { color: #10A37F; }
 
+.show-more-btn { font-size: 11px; padding: 5px 10px; margin: 4px 0 8px; }
+.show-more-btn + .model-grid { margin-top: 4px; }
+
 .custom-model-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .custom-model-input-row input { max-width: 280px; }
 
