@@ -214,6 +214,27 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
 .leaderboard-meta { color: var(--muted); font-size: 11px; }
 .leaderboard-sentence { color: var(--muted); font-size: 12px; flex-basis: 100%; margin-top: 2px; }
 
+.category-chips { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+.category-chip {
+  display: inline-block;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.best-model-banner {
+  border: 1px solid var(--grade-a);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--grade-a);
+  background: #f0f9f2;
+}
+
 .grade-badge {
   display: inline-block;
   padding: 2px 10px;

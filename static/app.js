@@ -229,6 +229,25 @@ function showRun(runId) {
   renderResults(run);
 }
 
+const CATEGORY_LABELS = {
+  accuracy: ["Accuracy", "#4285F4"],
+  rule_checks: ["Checks", "#0668E1"],
+  cost_efficiency: ["Cost Eff.", "#1e8e3e"],
+  speed: ["Speed", "#f9ab00"],
+};
+
+function renderCategoryChips(categories) {
+  if (!categories) return "";
+  return Object.entries(CATEGORY_LABELS)
+    .filter(([key]) => categories[key] !== undefined && categories[key] !== null)
+    .map(([key, [label, color]]) => `
+      <span class="category-chip" style="border-color:${color}; color:${color}">
+        ${label} ${Math.round(categories[key])}
+      </span>
+    `)
+    .join("");
+}
+
 function renderResults(data) {
   document.getElementById("results-section").hidden = false;
 
@@ -251,6 +270,7 @@ function renderResults(data) {
       <span class="leaderboard-model">${modelId}</span>
       <span class="grade-badge ${gradeClass}">${grade.letter || "N/A"}</span>
       <span class="leaderboard-meta">${grade.score ?? "N/A"}/100${metaBits.length ? " · " + metaBits.join(" · ") : ""}</span>
+      <span class="category-chips">${renderCategoryChips(grade.categories)}</span>
       <span class="leaderboard-sentence">${grade.sentence}</span>
     `;
     leaderboardEl.appendChild(row);
@@ -262,6 +282,13 @@ function renderResults(data) {
     const promptHeader = document.createElement("h3");
     promptHeader.textContent = row.test_case.prompt;
     gridEl.appendChild(promptHeader);
+
+    if (row.best_model && row.best_model.model_id) {
+      const recommendationEl = document.createElement("div");
+      recommendationEl.className = "best-model-banner";
+      recommendationEl.innerHTML = `<strong>Recommended: ${row.best_model.model_id}</strong> — ${row.best_model.reason}`;
+      gridEl.appendChild(recommendationEl);
+    }
 
     Object.entries(row.cells).forEach(([modelId, cell]) => {
       const cellEl = document.createElement("div");

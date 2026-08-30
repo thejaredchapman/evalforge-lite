@@ -63,6 +63,8 @@ def test_run_comparison_returns_results_grades_and_verdict(mock_verdict, mock_ru
     assert "created_at" in result
     assert result["stats"]["openai/gpt-5"]["total_cost_usd"] == 0.01
     assert result["stats"]["openai/gpt-5"]["avg_latency_ms"] == 10.0
+    assert result["grades"]["openai/gpt-5"]["categories"]["accuracy"] == 100.0
+    assert result["results"][0]["best_model"]["model_id"] == "openai/gpt-5"
 
 
 @patch("mcp_server.runner.run")
