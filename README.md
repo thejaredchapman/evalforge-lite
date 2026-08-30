@@ -16,11 +16,11 @@ Requires Python 3.10+ (the `mcp` package's floor); developed and tested on 3.12.
 
     python app.py
 
-Open http://localhost:5060, paste your OpenRouter API key (never sent
+Open http://localhost:8000, paste your OpenRouter API key (never sent
 anywhere but this server, never stored server-side beyond the request),
-add test cases, pick models, and run. Set `FLASK_DEBUG=1` before running
-if you need Flask's interactive debugger — it's off by default since this
-app handles live API keys.
+add test cases, pick models, and run. Set `PORT=<port>` to run on a
+different port, or `FLASK_DEBUG=1` if you need Flask's interactive
+debugger — it's off by default since this app handles live API keys.
 
 ### Try it out
 
