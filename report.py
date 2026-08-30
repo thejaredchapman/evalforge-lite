@@ -2,7 +2,11 @@ import csv
 import io
 from datetime import datetime
 
-from fpdf import FPDF, XPos, YPos
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from fpdf import FPDF, Align, XPos, YPos
 
 _NEW_LINE = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
 
@@ -12,6 +16,19 @@ _GRADE_FILL_COLORS = {
     "C": (249, 171, 0),
     "D": (217, 48, 37),
     "F": (217, 48, 37),
+}
+
+_CATEGORY_COLORS = {
+    "accuracy": "#4285F4",
+    "rule_checks": "#0668E1",
+    "cost_efficiency": "#1e8e3e",
+    "speed": "#f9ab00",
+}
+_CATEGORY_LABELS = {
+    "accuracy": "Accuracy",
+    "rule_checks": "Rule Checks",
+    "cost_efficiency": "Cost Efficiency",
+    "speed": "Speed",
 }
 
 _CSV_FIELDS = [
@@ -26,6 +43,38 @@ def _grade_fill(letter):
     if not letter:
         return (200, 200, 200)
     return _GRADE_FILL_COLORS.get(letter[0], (200, 200, 200))
+
+
+def _build_category_chart(grades):
+    models = [m for m, g in grades.items() if g.get("categories")]
+    if not models:
+        return None
+
+    categories = list(_CATEGORY_COLORS.keys())
+    n = len(categories)
+    width = 0.8 / n
+    positions = list(range(len(models)))
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for i, cat in enumerate(categories):
+        values = [grades[m]["categories"].get(cat) or 0 for m in models]
+        bar_positions = [p + i * width for p in positions]
+        ax.bar(bar_positions, values, width, label=_CATEGORY_LABELS[cat], color=_CATEGORY_COLORS[cat])
+
+    tick_positions = [p + width * (n - 1) / 2 for p in positions]
+    ax.set_ylabel("Score (0-100)")
+    ax.set_title("Category Scores by Model")
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(models, rotation=15, ha="right")
+    ax.set_ylim(0, 110)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.35), ncol=4, fontsize=8)
+    fig.tight_layout()
+
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png", dpi=150)
+    plt.close(fig)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def build_pdf(run_result):
@@ -111,6 +160,11 @@ def build_pdf(run_result):
                 pdf.cell(width, 7, f"{value:.0f}" if value is not None else "N/A", border=1, align="C")
             pdf.ln()
         pdf.ln(4)
+
+        chart_bytes = _build_category_chart(grades)
+        if chart_bytes:
+            pdf.image(io.BytesIO(chart_bytes), x=Align.C, w=170)
+            pdf.ln(4)
 
     pdf.set_font("Courier", "B", 12)
     pdf.cell(0, 8, "Test Cases", **_NEW_LINE)

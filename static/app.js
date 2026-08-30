@@ -5,6 +5,7 @@ const state = {
   customModels: [],
   runs: [],       // full /api/run responses seen this page load, oldest first
   activeRunId: null,
+  categoryChart: null,
 };
 
 function apiKey() {
@@ -248,6 +249,33 @@ function renderCategoryChips(categories) {
     .join("");
 }
 
+function renderCategoryChart(grades) {
+  const canvas = document.getElementById("category-chart");
+  if (state.categoryChart) {
+    state.categoryChart.destroy();
+    state.categoryChart = null;
+  }
+
+  const modelIds = Object.keys(grades).filter((id) => grades[id].categories);
+  if (modelIds.length === 0) return;
+
+  const datasets = Object.entries(CATEGORY_LABELS).map(([key, [label, color]]) => ({
+    label,
+    data: modelIds.map((id) => grades[id].categories[key] ?? 0),
+    backgroundColor: color,
+  }));
+
+  state.categoryChart = new Chart(canvas, {
+    type: "bar",
+    data: { labels: modelIds, datasets },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: "Score (0-100)" } } },
+      plugins: { legend: { position: "bottom" } },
+    },
+  });
+}
+
 function renderResults(data) {
   document.getElementById("results-section").hidden = false;
 
@@ -255,6 +283,8 @@ function renderResults(data) {
   verdictEl.textContent = data.verdict.winner
     ? `${data.verdict.winner}: ${data.verdict.rationale}`
     : "No verdict available.";
+
+  renderCategoryChart(data.grades);
 
   const leaderboardEl = document.getElementById("leaderboard");
   leaderboardEl.innerHTML = "";

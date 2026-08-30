@@ -200,6 +200,7 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
 .history-tab.active { color: var(--fg); border-color: var(--fg); font-weight: bold; }
 
 .leaderboard { padding: 0; overflow: hidden; }
+.chart-card { padding: 16px; }
 .leaderboard-row {
   display: flex;
   flex-wrap: wrap;
