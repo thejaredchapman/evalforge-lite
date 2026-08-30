@@ -1,5 +1,7 @@
 # EvalForge Lite
 
+<!-- mcp-name: io.github.thejaredchapman/evalforge-lite -->
+
 Compare text LLMs across providers via OpenRouter — bring your own API key.
 Available as a web app and as an MCP server.
 
@@ -63,6 +65,19 @@ State (policy, run history, rate limit) is per-process, since one stdio
 connection is one client. It's a local-only interface (stdio requires the
 server to run on the same machine as the client) — there's nothing to
 "deploy" for it.
+
+### Publishing to the official MCP registry
+
+`server.json` is already prepared. Publishing itself requires your own
+GitHub OAuth login, so run this yourself:
+
+    brew install mcp-publisher   # or download a release binary
+    mcp-publisher login github
+    mcp-publisher publish
+
+This registry (and its `server.json` schema) is new and evolves quickly —
+check [the current publishing docs](https://github.com/modelcontextprotocol/registry)
+before running the above in case anything's changed since this was written.
 
 ## Deploy (web app)
 
