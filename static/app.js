@@ -317,6 +317,18 @@ document.getElementById("policy-file").addEventListener("change", (e) => {
   if (e.target.files[0]) uploadPolicy(e.target.files[0]);
 });
 
+function toggleMenu(open) {
+  document.getElementById("mobile-menu").classList.toggle("open", open);
+  document.getElementById("menu-overlay").hidden = !open;
+  document.getElementById("menu-toggle").setAttribute("aria-expanded", String(open));
+}
+
+document.getElementById("menu-toggle").addEventListener("click", () => toggleMenu(true));
+document.getElementById("menu-overlay").addEventListener("click", () => toggleMenu(false));
+document.querySelectorAll("#mobile-menu a").forEach((link) => {
+  link.addEventListener("click", () => toggleMenu(false));
+});
+
 loadCatalog();
 loadAllModelsDatalist();
 addTestCase();

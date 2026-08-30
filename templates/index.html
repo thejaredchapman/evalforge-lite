@@ -9,7 +9,18 @@
   <header>
     <h1>EvalForge <span class="accent-brand">Lite</span></h1>
     <p class="tagline">Compare text LLMs across providers with your own OpenRouter key.</p>
+    <button id="menu-toggle" class="menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu">&#9776;</button>
   </header>
+
+  <nav id="mobile-menu" class="mobile-menu" aria-label="Section navigation">
+    <a href="#api-key-section">API Key</a>
+    <a href="#catalog-section">Models</a>
+    <a href="#policy-section">Policy</a>
+    <a href="#testcase-section">Test Cases</a>
+    <a href="#run-section">Run</a>
+    <a href="#results-section">Results</a>
+  </nav>
+  <div id="menu-overlay" class="menu-overlay" hidden></div>
 
   <section id="api-key-section" class="card">
     <label for="api-key">OpenRouter API key</label>
