@@ -24,6 +24,24 @@ async function loadCatalog() {
   renderProviders(data.providers);
 }
 
+async function loadAllModelsDatalist() {
+  try {
+    const resp = await fetch("/api/openrouter-models");
+    const data = await resp.json();
+    const datalist = document.getElementById("all-models-datalist");
+    datalist.innerHTML = "";
+    (data.models || []).forEach((model) => {
+      const option = document.createElement("option");
+      option.value = model.id;
+      option.label = model.name;
+      datalist.appendChild(option);
+    });
+  } catch (e) {
+    // Autocomplete is a convenience, not core functionality — fail silently
+    // and leave the custom model input usable without suggestions.
+  }
+}
+
 function renderFrontier(frontier) {
   const container = document.getElementById("frontier-list");
   container.innerHTML = "";
@@ -286,4 +304,5 @@ document.getElementById("policy-file").addEventListener("change", (e) => {
 });
 
 loadCatalog();
+loadAllModelsDatalist();
 addTestCase();

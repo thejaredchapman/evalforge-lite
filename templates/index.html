@@ -25,9 +25,13 @@
     <div id="provider-list"></div>
 
     <h2>Custom model ID</h2>
-    <p class="provider-blurb">Not in the catalog above? Add any OpenRouter model id directly.</p>
+    <p class="provider-blurb">
+      Not in the catalog above? Start typing for suggestions from OpenRouter's
+      full catalog, or <a href="https://openrouter.ai/models" target="_blank" rel="noopener">browse all models on OpenRouter &rarr;</a>
+    </p>
     <div class="custom-model-input-row">
-      <input type="text" id="custom-model-input" placeholder="provider/model-id">
+      <input type="text" id="custom-model-input" list="all-models-datalist" placeholder="provider/model-id">
+      <datalist id="all-models-datalist"></datalist>
       <button id="add-custom-model" class="secondary">Add</button>
     </div>
     <div id="custom-model-list" class="custom-model-list"></div>

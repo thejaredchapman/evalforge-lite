@@ -66,6 +66,11 @@ def api_suggest():
     return jsonify({"suggestions": catalog.suggest_family(cat, model_id)})
 
 
+@app.route("/api/openrouter-models")
+def api_openrouter_models():
+    return jsonify({"models": catalog.fetch_openrouter_models()})
+
+
 @app.route("/api/policy", methods=["POST"])
 def api_policy():
     session_id = _get_session_id()

@@ -96,6 +96,7 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
 .provider-block { margin-bottom: 16px; }
 .provider-block h3 { font-size: 13px; margin: 0 0 4px; }
 .provider-blurb { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+.provider-blurb a { color: #10A37F; }
 
 .custom-model-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
 .custom-model-input-row input { max-width: 280px; }
