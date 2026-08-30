@@ -3,3 +3,5 @@ requests
 fpdf2
 pdfplumber
 pytest
+mcp[cli]
+pytest-asyncio
