@@ -60,7 +60,33 @@ Exposes 7 tools: `list_models`, `suggest_models`, `set_policy`, `run_comparison`
 `list_runs`, `get_report`, `get_report_csv` — the same functionality as the web
 app's API, minus file-upload policy support (`set_policy` takes plain text).
 State (policy, run history, rate limit) is per-process, since one stdio
-connection is one client.
+connection is one client. It's a local-only interface (stdio requires the
+server to run on the same machine as the client) — there's nothing to
+"deploy" for it.
+
+## Deploy (web app)
+
+Includes a `render.yaml` for [Render](https://render.com): connect the
+GitHub repo, Render auto-detects it as a Blueprint, and it deploys with
+[gunicorn](https://gunicorn.org/) instead of Flask's development server.
+
+**Must stay at `--workers 1`** (see `render.yaml`'s `startCommand`) — all
+app state (policy text, run history, rate-limit counters) is a plain
+in-memory dict per Python process, guarded by locks for thread-safety but
+*not* shared across processes. `--threads 4` gives real concurrency within
+that one process safely; adding more *workers* would let different
+requests from the same browser session land on different processes with
+different state, silently breaking policy gating, run history, and the
+rate limit. State also resets on every restart/redeploy — expected for a
+stateless-by-design demo app, not a bug.
+
+For any other host: bind to `0.0.0.0` (not `127.0.0.1`, which is the
+correct default for local-only use) — either run behind gunicorn the same
+way (`gunicorn --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app`), or
+set `HOST=0.0.0.0` if invoking `python app.py` directly. Once deployed,
+the URL is reachable by anyone who has it; each visitor supplies their own
+OpenRouter key (never yours), so you aren't billed for their usage, but
+your hosting's bandwidth/CPU is shared across everyone who uses it.
 
 ## Test
 

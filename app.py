@@ -244,7 +244,8 @@ def api_report_csv():
 def main():
     debug = os.environ.get("FLASK_DEBUG") == "1"
     port = int(os.environ.get("PORT", 8000))
-    app.run(port=port, debug=debug)
+    host = os.environ.get("HOST", "127.0.0.1")
+    app.run(host=host, port=port, debug=debug)
 
 
 if __name__ == "__main__":
