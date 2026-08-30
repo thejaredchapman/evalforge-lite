@@ -4,6 +4,11 @@ import catalog
 import config
 
 
+def setup_function():
+    catalog._cache["data"] = None
+    catalog._cache["fetched_at"] = 0.0
+
+
 def test_load_catalog_matches_config_providers():
     assert catalog.load_catalog() == config.load_providers()
 
@@ -84,3 +89,37 @@ def test_fetch_openrouter_models_returns_empty_list_on_request_failure(mock_get)
     mock_get.side_effect = requests.RequestException("timed out")
 
     assert catalog.fetch_openrouter_models() == []
+
+
+@patch("catalog.requests.get")
+def test_fetch_openrouter_models_caches_within_ttl(mock_get):
+    mock_get.return_value = Mock(status_code=200, json=lambda: {"data": [{"id": "a/b", "name": "AB"}]})
+
+    catalog.fetch_openrouter_models()
+    catalog.fetch_openrouter_models()
+    catalog.fetch_openrouter_models()
+
+    mock_get.assert_called_once()
+
+
+@patch("catalog.requests.get")
+def test_fetch_openrouter_models_refetches_after_ttl_expires(mock_get):
+    mock_get.return_value = Mock(status_code=200, json=lambda: {"data": [{"id": "a/b", "name": "AB"}]})
+
+    with patch("catalog.time.time", return_value=1000.0):
+        catalog.fetch_openrouter_models()
+    with patch("catalog.time.time", return_value=1000.0 + catalog._CACHE_TTL_SECONDS + 1):
+        catalog.fetch_openrouter_models()
+
+    assert mock_get.call_count == 2
+
+
+@patch("catalog.requests.get")
+def test_fetch_openrouter_models_does_not_cache_failures(mock_get):
+    import requests
+    mock_get.side_effect = requests.RequestException("timed out")
+
+    catalog.fetch_openrouter_models()
+    catalog.fetch_openrouter_models()
+
+    assert mock_get.call_count == 2

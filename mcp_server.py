@@ -17,6 +17,7 @@ mcp = MCPServer("evalforge-lite")
 
 _SECRET_RE = re.compile(r"\b(sk|pk)-[A-Za-z0-9_-]{8,}\b")
 _RATE_LIMIT_KEY = "mcp-server"
+_EVALUATE_RATE_LIMIT_KEY = "mcp-server:evaluate"
 
 _policy_text = None
 _run_history = deque(maxlen=5)
@@ -53,8 +54,12 @@ def evaluate_prompt(prompt: str, api_key: str) -> dict:
     """Get pre-run feedback on a prompt's clarity/specificity before running a comparison.
 
     An explicit, separately-triggered LLM call (uses your API key) — not run
-    automatically as part of run_comparison.
+    automatically as part of run_comparison. Rate-limited independently from
+    run_comparison's 3-per-8h budget.
     """
+    limit_result = limiter.check_and_record(_EVALUATE_RATE_LIMIT_KEY, time.time())
+    if not limit_result["allowed"]:
+        return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
     return judge.evaluate_prompt(prompt, api_key=api_key)
 
 
