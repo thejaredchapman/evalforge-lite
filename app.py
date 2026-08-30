@@ -71,6 +71,14 @@ def api_openrouter_models():
     return jsonify({"models": catalog.fetch_openrouter_models()})
 
 
+@app.route("/api/evaluate-prompt", methods=["POST"])
+def api_evaluate_prompt():
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not body.get("prompt") or not body.get("api_key"):
+        return _error_response("Missing required field: prompt and api_key.", 400)
+    return jsonify(judge.evaluate_prompt(body["prompt"], api_key=body["api_key"]))
+
+
 @app.route("/api/policy", methods=["POST"])
 def api_policy():
     session_id = _get_session_id()

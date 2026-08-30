@@ -49,6 +49,24 @@ def test_api_openrouter_models_returns_empty_list_on_fetch_failure(mock_fetch):
     assert resp.get_json() == {"models": []}
 
 
+@patch("app.judge.evaluate_prompt")
+def test_api_evaluate_prompt_returns_score_and_feedback(mock_evaluate):
+    mock_evaluate.return_value = {"score": 2, "feedback": "Too vague."}
+    resp = _client().post("/api/evaluate-prompt", json={"prompt": "Tell me stuff", "api_key": "sk-or-v1-test"})
+    assert resp.get_json() == {"score": 2, "feedback": "Too vague."}
+    mock_evaluate.assert_called_once_with("Tell me stuff", api_key="sk-or-v1-test")
+
+
+def test_api_evaluate_prompt_missing_prompt_returns_400():
+    resp = _client().post("/api/evaluate-prompt", json={"api_key": "sk-or-v1-test"})
+    assert resp.status_code == 400
+
+
+def test_api_evaluate_prompt_missing_api_key_returns_400():
+    resp = _client().post("/api/evaluate-prompt", json={"prompt": "hello"})
+    assert resp.status_code == 400
+
+
 def test_api_policy_upload_stores_text_for_session():
     client = _client()
     resp = client.post(

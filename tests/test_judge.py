@@ -72,3 +72,48 @@ def test_overall_verdict_fallback_on_malformed_response(mock_call):
 
     assert result["winner"] is None
     assert "Could not parse" in result["rationale"]
+
+
+@patch("judge.openrouter.call_model")
+def test_evaluate_prompt_parses_clean_json_response(mock_call):
+    mock_call.side_effect = _fake_call_model(
+        '{"score": 2, "feedback": "Too vague — specify the desired output format and length."}'
+    )
+
+    result = judge.evaluate_prompt("Tell me about dogs", api_key="sk-or-v1-test")
+
+    assert result == {
+        "score": 2, "feedback": "Too vague — specify the desired output format and length.",
+    }
+
+
+@patch("judge.openrouter.call_model")
+def test_evaluate_prompt_fallback_on_malformed_response(mock_call):
+    mock_call.side_effect = _fake_call_model("not json at all")
+
+    result = judge.evaluate_prompt("some prompt", api_key="sk-or-v1-test")
+
+    assert result["score"] is None
+    assert "Could not evaluate" in result["feedback"]
+
+
+@patch("judge.openrouter.call_model")
+def test_evaluate_prompt_fallback_on_call_error(mock_call):
+    import openrouter
+    mock_call.side_effect = openrouter.OpenRouterError("network down")
+
+    result = judge.evaluate_prompt("some prompt", api_key="sk-or-v1-test")
+
+    assert result["score"] is None
+    assert "Could not evaluate" in result["feedback"]
+
+
+@patch("judge.openrouter.call_model")
+def test_evaluate_prompt_passes_api_key_and_model_through(mock_call):
+    mock_call.side_effect = _fake_call_model('{"score": 4, "feedback": "Clear and specific."}')
+
+    judge.evaluate_prompt("some prompt", api_key="sk-or-v1-mykey", judge_model="anthropic/claude-haiku-4.5")
+
+    args, kwargs = mock_call.call_args
+    assert args[0] == "anthropic/claude-haiku-4.5"
+    assert kwargs["api_key"] == "sk-or-v1-mykey"

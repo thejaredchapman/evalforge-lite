@@ -68,3 +68,16 @@ async def test_get_report_without_a_prior_run_returns_error_over_real_stdio_tran
             await session.initialize()
             result = _parse(await session.call_tool("get_report", {}))
             assert result == {"error": "no_run_available"}
+
+
+@pytest.mark.asyncio
+async def test_evaluate_prompt_tool_is_registered_with_required_args():
+    # Doesn't actually invoke the tool (that would make a real network call) —
+    # confirms it's wired up and schema-validated over the real transport.
+    params = StdioServerParameters(command=sys.executable, args=[_SERVER_PATH])
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            tool = next(t for t in tools.tools if t.name == "evaluate_prompt")
+            assert set(tool.input_schema["required"]) == {"prompt", "api_key"}
