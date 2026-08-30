@@ -92,3 +92,7 @@ suite needs no API key and makes no network calls.
   server restart) in both interfaces.
 - All state is in-memory only, capped at 5 runs per session — nothing is
   persisted to disk.
+
+## License
+
+[MIT](LICENSE)

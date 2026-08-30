@@ -278,14 +278,28 @@ function renderResults(data) {
   });
 }
 
+function triggerDownload(url, filename) {
+  // A same-origin <a download> is honored as a forced download by every
+  // modern browser, unlike navigating via window.location.href — some
+  // browsers (Safari in particular) can still preview a PDF inline on a
+  // direct navigation even when the server sends Content-Disposition:
+  // attachment.
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function downloadReport() {
   if (!state.activeRunId) return;
-  window.location.href = `/api/report?run_id=${encodeURIComponent(state.activeRunId)}`;
+  triggerDownload(`/api/report?run_id=${encodeURIComponent(state.activeRunId)}`, "evalforge-report.pdf");
 }
 
 function downloadCsv() {
   if (!state.activeRunId) return;
-  window.location.href = `/api/report.csv?run_id=${encodeURIComponent(state.activeRunId)}`;
+  triggerDownload(`/api/report.csv?run_id=${encodeURIComponent(state.activeRunId)}`, "evalforge-report.csv");
 }
 
 document.getElementById("add-testcase").addEventListener("click", addTestCase);
@@ -301,6 +315,18 @@ document.getElementById("download-report").addEventListener("click", downloadRep
 document.getElementById("download-csv").addEventListener("click", downloadCsv);
 document.getElementById("policy-file").addEventListener("change", (e) => {
   if (e.target.files[0]) uploadPolicy(e.target.files[0]);
+});
+
+function toggleMenu(open) {
+  document.getElementById("mobile-menu").classList.toggle("open", open);
+  document.getElementById("menu-overlay").hidden = !open;
+  document.getElementById("menu-toggle").setAttribute("aria-expanded", String(open));
+}
+
+document.getElementById("menu-toggle").addEventListener("click", () => toggleMenu(true));
+document.getElementById("menu-overlay").addEventListener("click", () => toggleMenu(false));
+document.querySelectorAll("#mobile-menu a").forEach((link) => {
+  link.addEventListener("click", () => toggleMenu(false));
 });
 
 loadCatalog();
