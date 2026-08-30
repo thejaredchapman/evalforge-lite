@@ -22,6 +22,22 @@ add test cases, pick models, and run. Set `FLASK_DEBUG=1` before running
 if you need Flask's interactive debugger — it's off by default since this
 app handles live API keys.
 
+### Try it out
+
+1. Paste an OpenRouter API key into the "OpenRouter API key" field.
+2. Add a test case: a prompt, and optionally a rubric (scored by an LLM
+   judge) and/or rule-based checks (e.g. "contains", "max_length").
+3. Pick two or more models, ideally from different providers, from the
+   frontier list or by browsing providers.
+4. Click **Run comparison** — you'll get a leaderboard with letter grades,
+   per-model cost/latency, and an overall verdict, plus a per-cell view of
+   every model's actual response.
+5. Download a PDF report or CSV export of the run.
+
+**Heads up before you click Run repeatedly while testing:** it's
+rate-limited to 3 runs per 8 hours per browser session (resets if you
+restart the server) — see [Notes](#notes).
+
 ## MCP server
 
     python mcp_server.py
