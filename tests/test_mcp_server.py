@@ -38,6 +38,36 @@ def test_evaluate_prompt_returns_score_and_feedback(mock_evaluate):
     mock_evaluate.assert_called_once_with("Tell me stuff", api_key="sk-or-v1-test")
 
 
+@patch("mcp_server.judge.evaluate_prompt")
+def test_evaluate_prompt_blocks_after_three_calls_in_window(mock_evaluate):
+    mock_evaluate.return_value = {"score": 3, "feedback": "ok"}
+
+    for _ in range(3):
+        result = mcp_server.evaluate_prompt("hello", api_key="sk-or-v1-test")
+        assert "error" not in result
+
+    fourth = mcp_server.evaluate_prompt("hello", api_key="sk-or-v1-test")
+    assert fourth["error"] == "rate_limited"
+    assert "reset_at" in fourth
+
+
+@patch("mcp_server.judge.evaluate_prompt")
+@patch("mcp_server.runner.run")
+@patch("mcp_server.judge.overall_verdict")
+def test_evaluate_prompt_rate_limit_is_independent_from_run_rate_limit(mock_verdict, mock_run, mock_evaluate):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    mock_evaluate.return_value = {"score": 3, "feedback": "ok"}
+
+    for _ in range(3):
+        result = mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test")
+        assert "error" not in result
+
+    # evaluate_prompt should still work — it's a separate rate-limit bucket
+    result = mcp_server.evaluate_prompt("hello", api_key="sk-or-v1-test")
+    assert "error" not in result
+
+
 def test_run_comparison_missing_api_key_returns_error():
     result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"], api_key="")
     assert "error" in result

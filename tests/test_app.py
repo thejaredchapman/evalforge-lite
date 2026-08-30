@@ -67,6 +67,39 @@ def test_api_evaluate_prompt_missing_api_key_returns_400():
     assert resp.status_code == 400
 
 
+@patch("app.judge.evaluate_prompt")
+def test_api_evaluate_prompt_blocks_after_three_calls_in_window(mock_evaluate):
+    mock_evaluate.return_value = {"score": 3, "feedback": "ok"}
+    client = _client()
+    payload = {"prompt": "hello", "api_key": "sk-or-v1-test"}
+
+    for _ in range(3):
+        resp = client.post("/api/evaluate-prompt", json=payload)
+        assert resp.status_code == 200
+
+    fourth = client.post("/api/evaluate-prompt", json=payload)
+    assert fourth.status_code == 429
+
+
+@patch("app.judge.evaluate_prompt")
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_evaluate_prompt_rate_limit_is_independent_from_run_rate_limit(mock_verdict, mock_run, mock_evaluate):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    mock_evaluate.return_value = {"score": 3, "feedback": "ok"}
+    client = _client()
+
+    # Use up all 3 run-limiter calls
+    for _ in range(3):
+        resp = client.post("/api/run", json={"test_cases": [], "models": [], "api_key": "sk-or-v1-test"})
+        assert resp.status_code == 200
+
+    # evaluate-prompt should still work — it's a separate rate-limit bucket
+    resp = client.post("/api/evaluate-prompt", json={"prompt": "hello", "api_key": "sk-or-v1-test"})
+    assert resp.status_code == 200
+
+
 def test_api_policy_upload_stores_text_for_session():
     client = _client()
     resp = client.post(

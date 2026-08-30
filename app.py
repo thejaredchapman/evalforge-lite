@@ -73,10 +73,19 @@ def api_openrouter_models():
 
 @app.route("/api/evaluate-prompt", methods=["POST"])
 def api_evaluate_prompt():
+    session_id = _get_session_id()
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not body.get("prompt") or not body.get("api_key"):
-        return _error_response("Missing required field: prompt and api_key.", 400)
-    return jsonify(judge.evaluate_prompt(body["prompt"], api_key=body["api_key"]))
+        return _with_session_cookie(_error_response("Missing required field: prompt and api_key.", 400), session_id)
+
+    limit_result = limiter.check_and_record(f"evaluate:{session_id}", time.time())
+    if not limit_result["allowed"]:
+        resp = jsonify({"error": "rate_limited", "reset_at": limit_result["reset_at"]})
+        resp.status_code = 429
+        return _with_session_cookie(resp, session_id)
+
+    result = judge.evaluate_prompt(body["prompt"], api_key=body["api_key"])
+    return _with_session_cookie(jsonify(result), session_id)
 
 
 @app.route("/api/policy", methods=["POST"])

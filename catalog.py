@@ -1,8 +1,13 @@
+import time
+
 import requests
 
 import config
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+
+_CACHE_TTL_SECONDS = 300
+_cache = {"data": None, "fetched_at": 0.0}
 
 
 def load_catalog():
@@ -12,9 +17,19 @@ def load_catalog():
 def fetch_openrouter_models():
     """Fetch OpenRouter's full public model list (no API key required to list models).
 
-    Returns an empty list on any request failure — this powers an optional
-    autocomplete convenience, not core functionality, so it fails soft.
+    Cached for _CACHE_TTL_SECONDS — this is called once per page load per
+    visitor, and repeatedly hitting OpenRouter's public endpoint on every
+    reload serves no one; a short server-side cache means the real HTTP
+    call happens at most once per TTL window regardless of visitor count.
+    Returns an empty list on any request failure (never cached, so a
+    transient failure self-heals on the next call) — this powers an
+    optional autocomplete convenience, not core functionality, so it fails
+    soft rather than surfacing an error.
     """
+    now = time.time()
+    if _cache["data"] is not None and (now - _cache["fetched_at"]) < _CACHE_TTL_SECONDS:
+        return _cache["data"]
+
     try:
         resp = requests.get(OPENROUTER_MODELS_URL, timeout=10)
         resp.raise_for_status()
@@ -22,7 +37,10 @@ def fetch_openrouter_models():
     except requests.RequestException:
         return []
 
-    return [{"id": m["id"], "name": m.get("name", m["id"])} for m in data.get("data", [])]
+    models = [{"id": m["id"], "name": m.get("name", m["id"])} for m in data.get("data", [])]
+    _cache["data"] = models
+    _cache["fetched_at"] = now
+    return models
 
 
 def frontier_models(catalog_dict):
