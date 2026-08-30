@@ -17,6 +17,8 @@ _GRADE_FILL_COLORS = {
 _CSV_FIELDS = [
     "prompt", "model_id", "status", "response_text", "judge_score",
     "judge_rationale", "checks_passed", "checks_total", "cost_usd", "latency_ms", "tokens",
+    "accuracy_score", "rule_checks_score", "cost_efficiency_score", "speed_score",
+    "best_model_for_prompt", "best_model_reason",
 ]
 
 
@@ -90,11 +92,39 @@ def build_pdf(run_result):
             pdf.ln()
     pdf.ln(4)
 
+    if any(g.get("categories") for g in grades.values()):
+        pdf.set_font("Courier", "B", 12)
+        pdf.cell(0, 8, "Category Breakdown", **_NEW_LINE)
+        cat_col_widths = (60, 30, 30, 30, 30)
+        cat_headers = ("Model", "Accuracy", "Checks", "Cost Eff.", "Speed")
+        pdf.set_font("Courier", "B", 9)
+        for width, header in zip(cat_col_widths, cat_headers):
+            pdf.cell(width, 7, header, border=1)
+        pdf.ln()
+
+        pdf.set_font("Courier", "", 9)
+        for model_id, grade in grades.items():
+            categories = grade.get("categories") or {}
+            pdf.cell(cat_col_widths[0], 7, model_id, border=1)
+            for width, key in zip(cat_col_widths[1:], ("accuracy", "rule_checks", "cost_efficiency", "speed")):
+                value = categories.get(key)
+                pdf.cell(width, 7, f"{value:.0f}" if value is not None else "N/A", border=1, align="C")
+            pdf.ln()
+        pdf.ln(4)
+
     pdf.set_font("Courier", "B", 12)
     pdf.cell(0, 8, "Test Cases", **_NEW_LINE)
     for row in run_result.get("results") or []:
         pdf.set_font("Courier", "B", 10)
         pdf.multi_cell(0, 6, f"Prompt: {row['test_case']['prompt']}", **_NEW_LINE)
+
+        best_model = row.get("best_model")
+        if best_model and best_model.get("model_id"):
+            pdf.set_font("Courier", "", 9)
+            pdf.set_text_color(30, 142, 62)
+            pdf.multi_cell(0, 5, f"  Recommended: {best_model['model_id']} - {best_model['reason']}", **_NEW_LINE)
+            pdf.set_text_color(0, 0, 0)
+
         pdf.set_font("Courier", "", 9)
         for model_id, cell in row["cells"].items():
             if cell.get("blocked"):
@@ -115,19 +145,36 @@ def build_csv(run_result):
     writer = csv.writer(buffer)
     writer.writerow(_CSV_FIELDS)
 
+    grades = run_result.get("grades") or {}
+
     for row in run_result.get("results") or []:
         prompt = row["test_case"]["prompt"]
+        best_model = row.get("best_model") or {}
+        best_model_id = best_model.get("model_id") or ""
+        best_model_reason = best_model.get("reason") or ""
+
         for model_id, cell in row["cells"].items():
+            categories = (grades.get(model_id) or {}).get("categories") or {}
+            category_values = [
+                categories.get("accuracy", ""),
+                categories.get("rule_checks", ""),
+                categories.get("cost_efficiency", ""),
+                categories.get("speed", ""),
+            ]
+            category_values = [v if v is not None else "" for v in category_values]
+
             if cell.get("blocked"):
                 writer.writerow([
                     prompt, model_id, "blocked", "", "",
                     f"{cell.get('policy_clause')}: {cell.get('policy_reason')}",
                     "", "", "", "", "",
+                    *category_values, best_model_id, best_model_reason,
                 ])
             elif cell.get("error"):
                 writer.writerow([
                     prompt, model_id, "error", cell.get("error"), "",
                     "", "", "", "", "", "",
+                    *category_values, best_model_id, best_model_reason,
                 ])
             else:
                 checks = cell.get("checks") or []
@@ -138,6 +185,7 @@ def build_csv(run_result):
                     cell.get("judge_rationale") or "",
                     checks_passed, len(checks),
                     cell.get("cost_usd"), cell.get("latency_ms"), cell.get("tokens"),
+                    *category_values, best_model_id, best_model_reason,
                 ])
 
     return buffer.getvalue()

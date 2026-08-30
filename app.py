@@ -116,6 +116,20 @@ def _cost_latency_stats(agg_stats):
     return result
 
 
+def _category_scores_by_model(agg_stats, stats):
+    all_costs = [stats[m]["total_cost_usd"] for m, s in agg_stats.items() if s["costs"]]
+    all_latencies = [stats[m]["avg_latency_ms"] for m, s in agg_stats.items() if s["latencies"]]
+
+    result = {}
+    for model_id, s in agg_stats.items():
+        cost = stats[model_id]["total_cost_usd"] if s["costs"] else None
+        latency = stats[model_id]["avg_latency_ms"] if s["latencies"] else None
+        result[model_id] = grading.category_scores(
+            s["judge_scores"], s["rule_check_results"], cost, all_costs, latency, all_latencies
+        )
+    return result
+
+
 def _validate_run_body(body):
     if not isinstance(body, dict):
         return "Request body must be JSON."
@@ -153,6 +167,9 @@ def api_run():
     try:
         results = runner.run(test_cases, model_ids, api_key=api_key, policy_text=policy_text)
 
+        for row in results:
+            row["best_model"] = grading.best_model_for_test_case(row["cells"])
+
         agg_stats = _aggregate_stats(results, model_ids)
         grades = {
             model_id: grading.grade_model(
@@ -161,6 +178,9 @@ def api_run():
             for model_id, s in agg_stats.items()
         }
         stats = _cost_latency_stats(agg_stats)
+        categories = _category_scores_by_model(agg_stats, stats)
+        for model_id in grades:
+            grades[model_id]["categories"] = categories[model_id]
 
         verdict = {"winner": None, "rationale": "No models were run."}
         if model_ids:

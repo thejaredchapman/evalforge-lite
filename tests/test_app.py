@@ -111,6 +111,8 @@ def test_api_run_returns_results_grades_and_verdict(mock_verdict, mock_run):
     assert "created_at" in body
     assert body["stats"]["openai/gpt-5"]["total_cost_usd"] == 0.01
     assert body["stats"]["openai/gpt-5"]["avg_latency_ms"] == 10.0
+    assert body["grades"]["openai/gpt-5"]["categories"]["accuracy"] == 100.0
+    assert body["results"][0]["best_model"]["model_id"] == "openai/gpt-5"
 
 
 @patch("app.runner.run")

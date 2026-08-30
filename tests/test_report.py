@@ -4,7 +4,10 @@ import io
 import report
 
 
-def _sample_run_result(include_block=False, include_error=False, include_stats=False):
+def _sample_run_result(
+    include_block=False, include_error=False, include_stats=False,
+    include_categories=False, include_best_model=False,
+):
     cell_ok = {
         "model_id": "openai/gpt-5", "blocked": False, "error": None,
         "response_text": "Paris is the capital of France.",
@@ -25,11 +28,21 @@ def _sample_run_result(include_block=False, include_error=False, include_stats=F
             "error": "rate limited",
         }
 
+    result_row = {"test_case": {"prompt": "What is the capital of France?"}, "cells": cells}
+    if include_best_model:
+        result_row["best_model"] = {"model_id": "openai/gpt-5", "reason": "Judge score 5/5 - Accurate and concise."}
+
+    grade = {"score": 100.0, "letter": "A+", "sentence": "Strong performer (A+, 100.0/100)."}
+    if include_categories:
+        grade["categories"] = {
+            "accuracy": 100.0, "rule_checks": 100.0, "cost_efficiency": 100.0, "speed": 100.0,
+        }
+
     run_result = {
         "run_id": "test-run-1",
         "created_at": 1735689600.0,
-        "results": [{"test_case": {"prompt": "What is the capital of France?"}, "cells": cells}],
-        "grades": {"openai/gpt-5": {"score": 100.0, "letter": "A+", "sentence": "Strong performer (A+, 100.0/100)."}},
+        "results": [result_row],
+        "grades": {"openai/gpt-5": grade},
         "verdict": {"winner": "openai/gpt-5", "rationale": "Most accurate and best formatted."},
     }
     if include_stats:
@@ -66,6 +79,18 @@ def test_pdf_includes_stats_when_present():
     assert len(pdf_bytes) > 100
 
 
+def test_pdf_includes_category_breakdown_when_present():
+    pdf_bytes = report.build_pdf(_sample_run_result(include_categories=True))
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 100
+
+
+def test_pdf_includes_best_model_recommendation_when_present():
+    pdf_bytes = report.build_pdf(_sample_run_result(include_best_model=True))
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 100
+
+
 def test_build_csv_returns_string_with_header_row():
     csv_text = report.build_csv(_sample_run_result())
     assert isinstance(csv_text, str)
@@ -74,7 +99,25 @@ def test_build_csv_returns_string_with_header_row():
     assert header == [
         "prompt", "model_id", "status", "response_text", "judge_score",
         "judge_rationale", "checks_passed", "checks_total", "cost_usd", "latency_ms", "tokens",
+        "accuracy_score", "rule_checks_score", "cost_efficiency_score", "speed_score",
+        "best_model_for_prompt", "best_model_reason",
     ]
+
+
+def test_build_csv_includes_category_scores_when_present():
+    csv_text = report.build_csv(_sample_run_result(include_categories=True))
+    reader = csv.DictReader(io.StringIO(csv_text))
+    row = next(reader)
+    assert row["accuracy_score"] == "100.0"
+    assert row["cost_efficiency_score"] == "100.0"
+
+
+def test_build_csv_includes_best_model_for_prompt_when_present():
+    csv_text = report.build_csv(_sample_run_result(include_best_model=True))
+    reader = csv.DictReader(io.StringIO(csv_text))
+    row = next(reader)
+    assert row["best_model_for_prompt"] == "openai/gpt-5"
+    assert "Judge score 5/5" in row["best_model_reason"]
 
 
 def test_build_csv_has_one_data_row_per_cell():
