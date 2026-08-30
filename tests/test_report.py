@@ -82,7 +82,23 @@ def test_pdf_includes_stats_when_present():
 def test_pdf_includes_category_breakdown_when_present():
     pdf_bytes = report.build_pdf(_sample_run_result(include_categories=True))
     assert pdf_bytes.startswith(b"%PDF")
-    assert len(pdf_bytes) > 100
+    # A chart image is embedded when categories are present — expect a
+    # meaningfully larger PDF than the text-only case (~2KB).
+    assert len(pdf_bytes) > 3000
+
+
+def test_build_category_chart_returns_png_bytes_when_categories_present():
+    grades = {"openai/gpt-5": {"categories": {
+        "accuracy": 100.0, "rule_checks": None, "cost_efficiency": 50.0, "speed": 80.0,
+    }}}
+    chart_bytes = report._build_category_chart(grades)
+    assert chart_bytes is not None
+    assert chart_bytes.startswith(b"\x89PNG")
+
+
+def test_build_category_chart_returns_none_without_categories():
+    assert report._build_category_chart({"openai/gpt-5": {"categories": None}}) is None
+    assert report._build_category_chart({}) is None
 
 
 def test_pdf_includes_best_model_recommendation_when_present():
