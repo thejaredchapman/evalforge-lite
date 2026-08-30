@@ -35,6 +35,20 @@ def test_api_catalog_returns_providers_and_frontier():
     assert len(body["frontier"]) > 0
 
 
+@patch("app.catalog.fetch_openrouter_models")
+def test_api_openrouter_models_returns_fetched_list(mock_fetch):
+    mock_fetch.return_value = [{"id": "mistralai/mistral-large", "name": "Mistral Large"}]
+    resp = _client().get("/api/openrouter-models")
+    assert resp.get_json() == {"models": [{"id": "mistralai/mistral-large", "name": "Mistral Large"}]}
+
+
+@patch("app.catalog.fetch_openrouter_models")
+def test_api_openrouter_models_returns_empty_list_on_fetch_failure(mock_fetch):
+    mock_fetch.return_value = []
+    resp = _client().get("/api/openrouter-models")
+    assert resp.get_json() == {"models": []}
+
+
 def test_api_policy_upload_stores_text_for_session():
     client = _client()
     resp = client.post(
