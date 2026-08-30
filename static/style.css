@@ -97,6 +97,34 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
 .provider-block h3 { font-size: 13px; margin: 0 0 4px; }
 .provider-blurb { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
 
+.custom-model-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.custom-model-input-row input { max-width: 280px; }
+
+.custom-model-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+
+.custom-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px 6px 12px;
+  font-size: 12px;
+  color: var(--fg);
+  background: #fff;
+}
+
+.custom-model-chip button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.custom-model-chip button:hover { color: var(--fg); opacity: 1; }
+
 .testcase-row {
   border: 1px solid var(--border);
   border-radius: 10px;
