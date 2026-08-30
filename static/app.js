@@ -278,14 +278,28 @@ function renderResults(data) {
   });
 }
 
+function triggerDownload(url, filename) {
+  // A same-origin <a download> is honored as a forced download by every
+  // modern browser, unlike navigating via window.location.href — some
+  // browsers (Safari in particular) can still preview a PDF inline on a
+  // direct navigation even when the server sends Content-Disposition:
+  // attachment.
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function downloadReport() {
   if (!state.activeRunId) return;
-  window.location.href = `/api/report?run_id=${encodeURIComponent(state.activeRunId)}`;
+  triggerDownload(`/api/report?run_id=${encodeURIComponent(state.activeRunId)}`, "evalforge-report.pdf");
 }
 
 function downloadCsv() {
   if (!state.activeRunId) return;
-  window.location.href = `/api/report.csv?run_id=${encodeURIComponent(state.activeRunId)}`;
+  triggerDownload(`/api/report.csv?run_id=${encodeURIComponent(state.activeRunId)}`, "evalforge-report.csv");
 }
 
 document.getElementById("add-testcase").addEventListener("click", addTestCase);
