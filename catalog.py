@@ -37,7 +37,10 @@ def fetch_openrouter_models():
     except requests.RequestException:
         return []
 
-    models = [{"id": m["id"], "name": m.get("name", m["id"])} for m in data.get("data", [])]
+    models = [
+        {"id": m["id"], "name": m.get("name", m["id"]), "created": m.get("created", 0)}
+        for m in data.get("data", [])
+    ]
     _cache["data"] = models
     _cache["fetched_at"] = now
     return models

@@ -46,7 +46,9 @@ def test_family_suggestions_stay_within_same_provider():
     suggestions = catalog.suggest_family(cat, "anthropic/claude-opus-4.5")
 
     for model in suggestions:
-        assert model["id"].startswith("anthropic/")
+        # OpenRouter's own self-updating "-latest" alias ids use a leading "~"
+        # instead of a plain "provider/model" prefix (e.g. "~anthropic/claude-opus-latest").
+        assert model["id"].lstrip("~").startswith("anthropic/")
 
 
 def test_family_suggestions_for_unknown_model_returns_empty_list():
@@ -55,19 +57,19 @@ def test_family_suggestions_for_unknown_model_returns_empty_list():
 
 
 @patch("catalog.requests.get")
-def test_fetch_openrouter_models_returns_id_and_name_pairs(mock_get):
+def test_fetch_openrouter_models_returns_id_name_and_created(mock_get):
     mock_get.return_value = Mock(status_code=200, json=lambda: {
         "data": [
-            {"id": "mistralai/mistral-large", "name": "Mistral Large"},
-            {"id": "openai/gpt-5", "name": "GPT-5"},
+            {"id": "mistralai/mistral-large", "name": "Mistral Large", "created": 1700000000},
+            {"id": "openai/gpt-5", "name": "GPT-5", "created": 1750000000},
         ]
     })
 
     result = catalog.fetch_openrouter_models()
 
     assert result == [
-        {"id": "mistralai/mistral-large", "name": "Mistral Large"},
-        {"id": "openai/gpt-5", "name": "GPT-5"},
+        {"id": "mistralai/mistral-large", "name": "Mistral Large", "created": 1700000000},
+        {"id": "openai/gpt-5", "name": "GPT-5", "created": 1750000000},
     ]
     mock_get.assert_called_once_with(catalog.OPENROUTER_MODELS_URL, timeout=10)
 
@@ -75,12 +77,12 @@ def test_fetch_openrouter_models_returns_id_and_name_pairs(mock_get):
 @patch("catalog.requests.get")
 def test_fetch_openrouter_models_falls_back_to_id_when_name_missing(mock_get):
     mock_get.return_value = Mock(status_code=200, json=lambda: {
-        "data": [{"id": "some/model"}]
+        "data": [{"id": "some/model", "created": 1700000000}]
     })
 
     result = catalog.fetch_openrouter_models()
 
-    assert result == [{"id": "some/model", "name": "some/model"}]
+    assert result == [{"id": "some/model", "name": "some/model", "created": 1700000000}]
 
 
 @patch("catalog.requests.get")

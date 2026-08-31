@@ -1,8 +1,11 @@
 :root {
   --bg: #ffffff;
+  --surface: #ffffff;
   --fg: #2a2a2a;
   --muted: #8a8a8a;
   --border: #eeeeee;
+  --overlay: rgba(0, 0, 0, 0.3);
+  --best-model-bg: #f0f9f2;
 
   --grade-a: #1e8e3e;
   --grade-b: #f9ab00;
@@ -15,7 +18,37 @@
   --status-blocked: #d93025;
 }
 
+/* Follows the OS/browser preference unless the user has explicitly chosen a theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16181c;
+    --surface: #21242a;
+    --fg: #e8e8e8;
+    --muted: #9a9a9a;
+    --border: #33363c;
+    --overlay: rgba(0, 0, 0, 0.5);
+    --best-model-bg: #14231a;
+  }
+}
+
+/* Explicit user choice via the theme toggle always wins over the OS preference. */
+:root[data-theme="dark"] {
+  --bg: #16181c;
+  --surface: #21242a;
+  --fg: #e8e8e8;
+  --muted: #9a9a9a;
+  --border: #33363c;
+  --overlay: rgba(0, 0, 0, 0.5);
+  --best-model-bg: #14231a;
+}
+
 * { box-sizing: border-box; }
+
+/* The hidden attribute must always win, even over elements whose class sets
+   its own display value (e.g. .model-grid's display:flex) — author-stylesheet
+   rules otherwise beat the UA's default [hidden]{display:none} regardless of
+   selector specificity, silently making `el.hidden = true` a no-op. */
+[hidden] { display: none !important; }
 
 html { scroll-behavior: smooth; }
 
@@ -43,7 +76,7 @@ header .tagline { color: var(--muted); margin: 0; }
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   color: var(--fg);
   border: 1px solid var(--border);
   font-size: 18px;
@@ -58,7 +91,7 @@ header .tagline { color: var(--muted); margin: 0; }
   height: 100%;
   width: 240px;
   max-width: 80vw;
-  background: #fff;
+  background: var(--surface);
   border-left: 1px solid var(--border);
   z-index: 30;
   padding: 64px 20px 20px;
@@ -75,12 +108,29 @@ header .tagline { color: var(--muted); margin: 0; }
 .menu-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--overlay);
   z-index: 25;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
 }
 
 @media (max-width: 640px) {
   .menu-toggle { display: block; }
+  .theme-toggle { right: 64px; }
 }
 
 h2 {
@@ -97,7 +147,7 @@ section { margin-bottom: 28px; }
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px 16px;
-  background: #fff;
+  background: var(--surface);
 }
 
 label { display: block; margin-bottom: 6px; font-size: 13px; }
@@ -110,7 +160,7 @@ input[type="password"], input[type="text"], textarea {
   padding: 8px 10px;
   width: 100%;
   max-width: 420px;
-  background: #fff;
+  background: var(--surface);
   color: var(--fg);
 }
 
@@ -122,7 +172,7 @@ button {
   font-family: inherit;
   font-size: 13px;
   background: var(--fg);
-  color: #fff;
+  color: var(--bg);
   border: none;
   border-radius: 8px;
   padding: 9px 18px;
@@ -130,19 +180,21 @@ button {
 }
 
 button:hover { opacity: 0.85; }
-button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--border); }
+button.secondary { background: var(--surface); color: var(--fg); border: 1px solid var(--border); }
 
 .model-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 
 .model-badge {
-  border: 1px solid var(--border);
+  border: 1px solid var(--accent, var(--border));
   border-radius: 8px;
   padding: 6px 12px;
   font-size: 12px;
   cursor: pointer;
-  background: #fff;
+  background: var(--surface);
+  color: var(--accent, var(--fg));
   transition: background 0.15s, color 0.15s;
 }
+.model-badge.selected { background: var(--accent); color: #fff; }
 
 .provider-block { margin-bottom: 16px; }
 .provider-block h3 { font-size: 13px; margin: 0 0 4px; }
@@ -166,7 +218,7 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
   padding: 6px 8px 6px 12px;
   font-size: 12px;
   color: var(--fg);
-  background: #fff;
+  background: var(--surface);
 }
 
 .custom-model-chip button {
@@ -200,7 +252,7 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
   padding: 5px 12px;
   font-size: 11px;
   cursor: pointer;
-  background: #fff;
+  background: var(--surface);
   color: var(--muted);
 }
 .history-tab.active { color: var(--fg); border-color: var(--fg); font-weight: bold; }
@@ -239,7 +291,7 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
   margin-bottom: 10px;
   font-size: 12px;
   color: var(--grade-a);
-  background: #f0f9f2;
+  background: var(--best-model-bg);
 }
 
 .grade-badge {
@@ -277,3 +329,12 @@ button.secondary { background: #fff; color: var(--fg); border: 1px solid var(--b
 }
 
 .download-row { display: flex; gap: 10px; margin-top: 16px; }
+
+.page-footer {
+  text-align: center;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.page-footer a { color: var(--muted); }
+.page-footer a:hover { color: #10A37F; }
