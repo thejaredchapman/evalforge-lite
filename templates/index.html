@@ -4,11 +4,25 @@
   <meta charset="utf-8">
   <title>EvalForge Lite</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    // Applied before first paint so a stored theme choice never flashes the
+    // wrong theme — the CSS's own prefers-color-scheme media query already
+    // handles "no stored choice, follow the OS" with no JS needed at all.
+    (function () {
+      try {
+        var theme = localStorage.getItem("evalforge-theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <header>
     <h1>EvalForge <span class="accent-brand">Lite</span></h1>
     <p class="tagline">Compare text LLMs across providers with your own OpenRouter key.</p>
+    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">&#127769;</button>
     <button id="menu-toggle" class="menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu">&#9776;</button>
   </header>
 
@@ -26,6 +40,9 @@
     <label for="api-key">OpenRouter API key</label>
     <input type="password" id="api-key" placeholder="sk-or-v1-...">
     <span id="api-key-status" class="status-text"></span>
+    <p class="provider-blurb">
+      Don't have a key? <a href="https://openrouter.ai/workspaces/default/keys" target="_blank" rel="noopener">Get one at OpenRouter &rarr;</a>
+    </p>
   </section>
 
   <section id="catalog-section">
@@ -39,6 +56,7 @@
     <p class="provider-blurb">
       Not in the catalog above? Start typing for suggestions from OpenRouter's
       full catalog, or <a href="https://openrouter.ai/models" target="_blank" rel="noopener">browse all models on OpenRouter &rarr;</a>
+      — or check <a href="https://openrouter.ai/rankings" target="_blank" rel="noopener">OpenRouter's rankings &rarr;</a> to see what's currently most-used.
     </p>
     <div class="custom-model-input-row">
       <input type="text" id="custom-model-input" list="all-models-datalist" placeholder="provider/model-id">
@@ -90,6 +108,10 @@
       <button id="download-csv" class="secondary">Download CSV</button>
     </div>
   </section>
+
+  <footer class="page-footer">
+    <a href="https://openrouter.ai/docs/guides/overview/report-feedback" target="_blank" rel="noopener">Report a problem</a>
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>

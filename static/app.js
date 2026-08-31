@@ -8,10 +8,46 @@ const state = {
   runs: [],       // full /api/run responses seen this page load, oldest first
   activeRunId: null,
   categoryChart: null,
+  lastGrades: null, // grades from the currently-displayed run, kept so the chart
+                     // can be redrawn with correct colors if the theme changes
 };
 
 function apiKey() {
   return document.getElementById("api-key").value.trim();
+}
+
+function getStoredTheme() {
+  try {
+    return localStorage.getItem("evalforge-theme");
+  } catch (e) {
+    return null;
+  }
+}
+
+function setStoredTheme(theme) {
+  try {
+    localStorage.setItem("evalforge-theme", theme);
+  } catch (e) {
+    // Storage unavailable (private browsing, blocked) — theme just won't persist.
+  }
+}
+
+function currentTheme() {
+  const explicit = document.documentElement.getAttribute("data-theme");
+  if (explicit) return explicit;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function updateThemeToggleIcon() {
+  document.getElementById("theme-toggle").textContent = currentTheme() === "dark" ? "☀️" : "🌙";
+}
+
+function toggleTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  setStoredTheme(next);
+  updateThemeToggleIcon();
+  if (state.lastGrades) renderCategoryChart(state.lastGrades);
 }
 
 function letterToClass(letter) {
@@ -70,9 +106,10 @@ function renderProviders(providers) {
     block.appendChild(grid);
 
     const curatedIds = new Set(provider.models.map((m) => m.id));
-    const moreModels = state.allModels.filter(
-      (m) => m.id.startsWith(`${providerId}/`) && !curatedIds.has(m.id)
-    );
+    const moreModels = state.allModels
+      .filter((m) => m.id.startsWith(`${providerId}/`) && !curatedIds.has(m.id) && !m.id.includes(":batch"))
+      .sort((a, b) => (b.created || 0) - (a.created || 0))
+      .slice(0, 10);
     if (moreModels.length > 0) {
       const moreGrid = document.createElement("div");
       moreGrid.className = "model-grid";
@@ -102,22 +139,19 @@ function modelBadge(model, color) {
   const el = document.createElement("div");
   el.className = "model-badge";
   el.textContent = model.name;
-  el.style.borderColor = color;
-  el.style.color = color;
+  el.style.setProperty("--accent", color);
   el.dataset.modelId = model.id;
-  el.addEventListener("click", () => toggleModel(model.id, el, color));
+  el.addEventListener("click", () => toggleModel(model.id, el));
   return el;
 }
 
-async function toggleModel(modelId, el, color) {
+async function toggleModel(modelId, el) {
   if (state.selectedModels.has(modelId)) {
     state.selectedModels.delete(modelId);
-    el.style.background = "#fff";
-    el.style.color = color;
+    el.classList.remove("selected");
   } else {
     state.selectedModels.add(modelId);
-    el.style.background = color;
-    el.style.color = "#fff";
+    el.classList.add("selected");
     const resp = await fetch(`/api/suggest?model_id=${encodeURIComponent(modelId)}`);
     const data = await resp.json();
     if (data.suggestions.length) {
@@ -316,6 +350,8 @@ function renderCategoryChips(categories) {
 }
 
 function renderCategoryChart(grades) {
+  state.lastGrades = grades;
+
   const canvas = document.getElementById("category-chart");
   if (state.categoryChart) {
     state.categoryChart.destroy();
@@ -331,13 +367,25 @@ function renderCategoryChart(grades) {
     backgroundColor: color,
   }));
 
+  const isDark = currentTheme() === "dark";
+  const textColor = isDark ? "#e8e8e8" : "#2a2a2a";
+  const gridColor = isDark ? "#33363c" : "#eeeeee";
+
   state.categoryChart = new Chart(canvas, {
     type: "bar",
     data: { labels: modelIds, datasets },
     options: {
       responsive: true,
-      scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: "Score (0-100)" } } },
-      plugins: { legend: { position: "bottom" } },
+      scales: {
+        y: {
+          beginAtZero: true, max: 100,
+          title: { display: true, text: "Score (0-100)", color: textColor },
+          ticks: { color: textColor },
+          grid: { color: gridColor },
+        },
+        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+      },
+      plugins: { legend: { position: "bottom", labels: { color: textColor } } },
     },
   });
 }
@@ -450,6 +498,18 @@ document.getElementById("menu-toggle").addEventListener("click", () => toggleMen
 document.getElementById("menu-overlay").addEventListener("click", () => toggleMenu(false));
 document.querySelectorAll("#mobile-menu a").forEach((link) => {
   link.addEventListener("click", () => toggleMenu(false));
+});
+
+document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+updateThemeToggleIcon();
+
+// Keep the icon and chart in sync if the OS theme changes mid-session and the
+// user hasn't made an explicit choice (an explicit choice always wins).
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (!document.documentElement.getAttribute("data-theme")) {
+    updateThemeToggleIcon();
+    if (state.lastGrades) renderCategoryChart(state.lastGrades);
+  }
 });
 
 loadCatalogAndModels();

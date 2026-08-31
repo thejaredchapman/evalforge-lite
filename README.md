@@ -132,12 +132,22 @@ suite needs no API key and makes no network calls.
 - Download results as a PDF report or a CSV for spreadsheet analysis.
 - The last 5 runs per session (browser cookie, or MCP server process)
   stay available to revisit or re-download without re-running them.
+- Light and dark mode — follows your OS/browser preference by default, or
+  toggle explicitly with the button in the header (persists via
+  `localStorage`).
+- Browse by provider shows the curated picks plus a "+N more" expansion
+  (up to 10, sorted newest-first) pulled from OpenRouter's live catalog,
+  so it's never limited to only the models hardcoded here.
 
 ## Notes
 
-- `data/providers.json` model IDs are illustrative — verify against
-  OpenRouter's live `/models` endpoint before relying on them for a real
-  demo, since provider catalogs change over time.
+- `data/providers.json`'s "frontier" picks use OpenRouter's own
+  self-updating `~provider/model-latest` alias ids (e.g.
+  `~openai/gpt-latest`) where available, so they stay current without
+  needing manual updates. The other curated (non-frontier) models are
+  pinned to specific ids and, like any pinned model reference, can go
+  stale as providers retire older versions — verify against OpenRouter's
+  live `/models` endpoint if one stops working.
 - Rate-limited to 3 runs per 8 hours per session (in-memory, resets on
   server restart) in both interfaces.
 - All state is in-memory only, capped at 5 runs per session — nothing is
