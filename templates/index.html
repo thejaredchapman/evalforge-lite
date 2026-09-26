@@ -37,13 +37,13 @@
   <div id="menu-overlay" class="menu-overlay" hidden></div>
 
   <section id="creds-section" class="card">
-    <div class="tab-row">
-      <button type="button" class="tab active" data-backend="openrouter">OpenRouter</button>
-      <button type="button" class="tab" data-backend="bedrock">Amazon Bedrock</button>
-      <button type="button" class="tab" data-backend="vertex">Google Vertex AI</button>
+    <div class="tab-row" role="tablist" aria-label="Credentials backend">
+      <button type="button" class="tab active" role="tab" id="tab-openrouter" aria-controls="panel-openrouter" aria-selected="true" data-backend="openrouter">OpenRouter</button>
+      <button type="button" class="tab" role="tab" id="tab-bedrock" aria-controls="panel-bedrock" aria-selected="false" tabindex="-1" data-backend="bedrock">Amazon Bedrock</button>
+      <button type="button" class="tab" role="tab" id="tab-vertex" aria-controls="panel-vertex" aria-selected="false" tabindex="-1" data-backend="vertex">Google Vertex AI</button>
     </div>
 
-    <div class="cred-panel" data-backend="openrouter">
+    <div class="cred-panel" role="tabpanel" id="panel-openrouter" aria-labelledby="tab-openrouter" data-backend="openrouter">
       <label for="api-key">OpenRouter API key</label>
       <input type="password" id="api-key" placeholder="sk-or-v1-..." autocomplete="off">
       <p class="provider-blurb">
@@ -51,7 +51,7 @@
       </p>
     </div>
 
-    <div class="cred-panel" data-backend="bedrock" hidden>
+    <div class="cred-panel" role="tabpanel" id="panel-bedrock" aria-labelledby="tab-bedrock" data-backend="bedrock" hidden>
       <label for="bedrock-region">AWS region</label>
       <input type="text" id="bedrock-region" placeholder="us-east-1">
       <div class="auth-toggle">
@@ -68,7 +68,7 @@
       </div>
     </div>
 
-    <div class="cred-panel" data-backend="vertex" hidden>
+    <div class="cred-panel" role="tabpanel" id="panel-vertex" aria-labelledby="tab-vertex" data-backend="vertex" hidden>
       <label for="vertex-project">GCP project ID</label>
       <input type="text" id="vertex-project" placeholder="my-project-123">
       <label for="vertex-region">Region</label>

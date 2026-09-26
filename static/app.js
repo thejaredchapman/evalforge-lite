@@ -39,17 +39,20 @@ function buildCreds() {
   if (orKey) creds.openrouter = orKey;
 
   const bedrockRegion = fieldValue("bedrock-region");
+  // A backend only counts as configured once its secret is filled in too, so the
+  // "Add … credentials first" check catches a region/project with no key.
   if (bedrockRegion) {
     if (checkedValue("bedrock-auth") === "api_key") {
-      creds.bedrock = { region: bedrockRegion, api_key: fieldValue("bedrock-api-key") };
+      const apiKey = fieldValue("bedrock-api-key");
+      if (apiKey) creds.bedrock = { region: bedrockRegion, api_key: apiKey };
     } else {
-      creds.bedrock = {
-        region: bedrockRegion,
-        access_key_id: fieldValue("bedrock-access-key-id"),
-        secret_access_key: fieldValue("bedrock-secret-access-key"),
-      };
-      const sessionToken = fieldValue("bedrock-session-token");
-      if (sessionToken) creds.bedrock.session_token = sessionToken;
+      const accessKeyId = fieldValue("bedrock-access-key-id");
+      const secretAccessKey = fieldValue("bedrock-secret-access-key");
+      if (accessKeyId && secretAccessKey) {
+        creds.bedrock = { region: bedrockRegion, access_key_id: accessKeyId, secret_access_key: secretAccessKey };
+        const sessionToken = fieldValue("bedrock-session-token");
+        if (sessionToken) creds.bedrock.session_token = sessionToken;
+      }
     }
   }
 
@@ -57,9 +60,10 @@ function buildCreds() {
   if (vertexProject) {
     const region = fieldValue("vertex-region") || "us-central1";
     if (checkedValue("vertex-auth") === "access_token") {
-      creds.vertex = { project: vertexProject, region, access_token: fieldValue("vertex-access-token") };
-    } else {
-      creds.vertex = { project: vertexProject, region, service_account_json: state.vertexServiceAccount || "" };
+      const accessToken = fieldValue("vertex-access-token");
+      if (accessToken) creds.vertex = { project: vertexProject, region, access_token: accessToken };
+    } else if (state.vertexServiceAccount) {
+      creds.vertex = { project: vertexProject, region, service_account_json: state.vertexServiceAccount };
     }
   }
   return creds;
@@ -78,13 +82,26 @@ function missingBackends(creds) {
 }
 
 function setupCredsPanel() {
-  const tabs = document.querySelectorAll("#creds-section .tab");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.classList.toggle("active", t === tab));
-      document.querySelectorAll(".cred-panel").forEach((panel) => {
-        panel.hidden = panel.dataset.backend !== tab.dataset.backend;
-      });
+  const tabs = Array.from(document.querySelectorAll("#creds-section .tab"));
+  const selectTab = (tab) => {
+    tabs.forEach((t) => {
+      const active = t === tab;
+      t.classList.toggle("active", active);
+      t.setAttribute("aria-selected", active ? "true" : "false");
+      t.tabIndex = active ? 0 : -1;
+    });
+    document.querySelectorAll(".cred-panel").forEach((panel) => {
+      panel.hidden = panel.dataset.backend !== tab.dataset.backend;
+    });
+  };
+  tabs.forEach((tab, i) => {
+    tab.addEventListener("click", () => selectTab(tab));
+    tab.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      selectTab(next);
+      next.focus();
     });
   });
   ["bedrock", "vertex"].forEach((group) => {
