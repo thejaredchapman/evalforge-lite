@@ -113,3 +113,54 @@ def test_overall_verdict_fallback_on_malformed_response(mock_call):
 
     assert result["winner"] is None
     assert "Could not parse" in result["rationale"]
+
+
+@patch("judge.gateway.call_backend")
+def test_evaluate_prompt_parses_clean_json_response(mock_call):
+    mock_call.side_effect = _fake_call_backend(
+        '{"score": 2, "feedback": "Too vague — specify the desired output format and length."}'
+    )
+
+    result = judge.evaluate_prompt("Tell me about dogs", creds={"openrouter": "sk-or-v1-test"})
+
+    assert result == {
+        "score": 2, "feedback": "Too vague — specify the desired output format and length.",
+    }
+
+
+@patch("judge.gateway.call_backend")
+def test_evaluate_prompt_fallback_on_malformed_response(mock_call):
+    mock_call.side_effect = _fake_call_backend("not json at all")
+
+    result = judge.evaluate_prompt("some prompt", creds={"openrouter": "sk-or-v1-test"})
+
+    assert result["score"] is None
+    assert "Could not evaluate" in result["feedback"]
+
+
+@patch("judge.gateway.call_backend")
+def test_evaluate_prompt_fallback_on_gateway_error(mock_call):
+    mock_call.side_effect = gateway.GatewayError("No Vertex AI credentials supplied.")
+
+    result = judge.evaluate_prompt("some prompt", creds={}, backend="vertex")
+
+    assert result["score"] is None
+    assert "Could not evaluate" in result["feedback"]
+
+
+@patch("judge.gateway.call_backend")
+def test_evaluate_prompt_passes_creds_backend_and_model_through(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"score": 4, "feedback": "Clear and specific."}')
+    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
+
+    judge.evaluate_prompt("some prompt", creds=creds, backend="bedrock")
+
+    args, _ = mock_call.call_args
+    assert args[0] == "bedrock"
+    assert args[1] == config.JUDGE_MODELS["bedrock"]
+    assert args[3] is creds
+
+
+def test_evaluate_prompt_unknown_backend_degrades_instead_of_raising():
+    result = judge.evaluate_prompt("some prompt", creds={}, backend="azure")
+    assert result["score"] is None

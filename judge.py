@@ -24,6 +24,16 @@ Which model performed best overall? Respond with ONLY a JSON object in this exac
 {{"winner": "<model id>", "rationale": "<two sentences>"}}
 """
 
+PROMPT_EVAL_TEMPLATE = """You are a prompt engineering expert. Evaluate the following prompt for clarity,
+specificity, and how likely it is to get a consistent, high-quality response from an LLM.
+
+Prompt:
+{prompt}
+
+Respond with ONLY a JSON object in this exact shape, no other text:
+{{"score": <integer 1-5>, "feedback": "<one or two sentences of specific, actionable feedback>"}}
+"""
+
 
 def _extract_json(text):
     match = re.search(r"\{.*\}", text, re.DOTALL)
@@ -61,3 +71,21 @@ def overall_verdict(aggregate_stats, creds, backend="openrouter", judge_model=No
         return {"winner": None, "rationale": "Could not parse verdict response."}
 
     return {"winner": winner, "rationale": rationale}
+
+
+def evaluate_prompt(prompt, creds, backend="openrouter", judge_model=None):
+    """Pre-run feedback on prompt quality (clarity/specificity) — an optional,
+    explicitly user-triggered check, not run automatically before every comparison.
+    """
+    llm_prompt = PROMPT_EVAL_TEMPLATE.format(prompt=prompt)
+
+    try:
+        model = judge_model or config.JUDGE_MODELS[backend]
+        result = gateway.call_backend(backend, model, [{"role": "user", "content": llm_prompt}], creds)
+        parsed = _extract_json(result["text"])
+        score = int(parsed["score"])
+        feedback = str(parsed["feedback"])
+    except (gateway.GatewayError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return {"score": None, "feedback": "Could not evaluate prompt."}
+
+    return {"score": score, "feedback": feedback}

@@ -1,0 +1,224 @@
+import base64
+import time
+import uuid
+from collections import deque
+
+from mcp.server.mcpserver import MCPServer
+
+import catalog
+import gateway
+import grading
+import judge
+import limiter
+import report
+import runner
+import scrub
+
+mcp = MCPServer("evalforge-lite")
+
+_RATE_LIMIT_KEY = "mcp-server"
+_EVALUATE_RATE_LIMIT_KEY = "mcp-server:evaluate"
+
+_policy_text = None
+_run_history = deque(maxlen=5)
+
+
+@mcp.tool()
+def list_models() -> dict:
+    """List every provider and model in the catalog, plus each provider's frontier (flagship) model."""
+    cat = catalog.load_catalog()
+    return {"providers": cat, "frontier": catalog.frontier_models(cat)}
+
+
+@mcp.tool()
+def suggest_models(model_id: str) -> dict:
+    """Suggest sibling models from the same family as the given model id."""
+    cat = catalog.load_catalog()
+    return {"suggestions": catalog.suggest_family(cat, model_id)}
+
+
+@mcp.tool()
+def set_policy(policy_text: str) -> dict:
+    """Set the company policy text used to gate prompts before any model is called."""
+    global _policy_text
+    _policy_text = policy_text
+    return {"ok": True}
+
+
+@mcp.tool()
+def evaluate_prompt(prompt: str, api_key: str = "", creds: dict | None = None,
+                    judge_backend: str = "openrouter") -> dict:
+    """Get pre-run feedback on a prompt's clarity/specificity before running a comparison.
+
+    An explicit, separately-triggered LLM call (uses your credentials) — not run
+    automatically as part of run_comparison. Rate-limited independently from
+    run_comparison's 3-per-8h budget. Pass `creds` as {"openrouter"?: str,
+    "bedrock"?: {...}, "vertex"?: {...}} to use Amazon Bedrock or Google Vertex AI;
+    a bare `api_key` is treated as an OpenRouter key. `judge_backend` picks which
+    backend runs the evaluation.
+    """
+    raw_creds = gateway.normalize_creds(creds, api_key)
+    if raw_creds is None:
+        return {"error": "Missing required field: creds (or api_key)."}
+    if judge_backend not in gateway.BACKENDS:
+        return {"error": "Invalid judge_backend."}
+    limit_result = limiter.check_and_record(_EVALUATE_RATE_LIMIT_KEY, time.time())
+    if not limit_result["allowed"]:
+        return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
+    return judge.evaluate_prompt(prompt, creds=gateway.prepare_creds(raw_creds), backend=judge_backend)
+
+
+def _aggregate_stats(results, model_ids):
+    stats = {
+        m: {
+            "judge_scores": [], "rule_check_results": [], "judge_rationales": [],
+            "costs": [], "latencies": [],
+        }
+        for m in model_ids
+    }
+    for row in results:
+        for model_id, cell in row["cells"].items():
+            if cell.get("blocked") or cell.get("error"):
+                continue
+            if cell.get("judge_score") is not None:
+                stats[model_id]["judge_scores"].append(cell["judge_score"])
+            if cell.get("judge_rationale"):
+                stats[model_id]["judge_rationales"].append(cell["judge_rationale"])
+            for check_result in cell.get("checks") or []:
+                stats[model_id]["rule_check_results"].append(check_result["passed"])
+            stats[model_id]["costs"].append(cell.get("cost_usd", 0.0))
+            stats[model_id]["latencies"].append(cell.get("latency_ms", 0))
+    return stats
+
+
+def _cost_latency_stats(agg_stats):
+    result = {}
+    for model_id, s in agg_stats.items():
+        total_cost = sum(s["costs"])
+        avg_latency = sum(s["latencies"]) / len(s["latencies"]) if s["latencies"] else 0.0
+        result[model_id] = {
+            "total_cost_usd": round(total_cost, 6),
+            "avg_latency_ms": round(avg_latency, 1),
+        }
+    return result
+
+
+def _category_scores_by_model(agg_stats, stats):
+    all_costs = [stats[m]["total_cost_usd"] for m, s in agg_stats.items() if s["costs"]]
+    all_latencies = [stats[m]["avg_latency_ms"] for m, s in agg_stats.items() if s["latencies"]]
+
+    result = {}
+    for model_id, s in agg_stats.items():
+        cost = stats[model_id]["total_cost_usd"] if s["costs"] else None
+        latency = stats[model_id]["avg_latency_ms"] if s["latencies"] else None
+        result[model_id] = grading.category_scores(
+            s["judge_scores"], s["rule_check_results"], cost, all_costs, latency, all_latencies
+        )
+    return result
+
+
+@mcp.tool()
+def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "", creds: dict | None = None,
+                   judge_backend: str = "openrouter") -> dict:
+    """Run a set of test-case prompts against a set of models, scoring each response.
+
+    Each test case may include an optional "rubric" (scored by an LLM judge) and/or
+    "checks" (rule-based checks). Returns per-model grades, cost/latency stats, and an
+    overall verdict. Rate-limited to 3 calls per 8 hours.
+    Models are "<catalog id>" (OpenRouter) or "<catalog id>@bedrock" / "<catalog id>@vertex";
+    pass matching creds ({"openrouter"?, "bedrock"?, "vertex"?}) or a bare OpenRouter api_key.
+    judge_backend picks which backend runs the judge and policy gate.
+    """
+    raw_creds = gateway.normalize_creds(creds, api_key)
+    if raw_creds is None:
+        return {"error": "Missing required field: creds (or api_key)."}
+    if judge_backend not in gateway.BACKENDS:
+        return {"error": "Invalid judge_backend."}
+    if _policy_text and not raw_creds.get(judge_backend):
+        label = gateway.BACKEND_LABELS[judge_backend]
+        return {"error": f"A policy is set, so {label} credentials are required for the judge backend."}
+
+    limit_result = limiter.check_and_record(_RATE_LIMIT_KEY, time.time())
+    if not limit_result["allowed"]:
+        return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
+
+    try:
+        prepared = gateway.prepare_creds(raw_creds)
+        results = runner.run(test_cases, models, creds=prepared, policy_text=_policy_text, judge_backend=judge_backend)
+
+        for row in results:
+            row["best_model"] = grading.best_model_for_test_case(row["cells"])
+
+        agg_stats = _aggregate_stats(results, models)
+        grades = {
+            model_id: grading.grade_model(
+                s["judge_scores"], s["rule_check_results"], s["judge_rationales"]
+            )
+            for model_id, s in agg_stats.items()
+        }
+        stats = _cost_latency_stats(agg_stats)
+        categories = _category_scores_by_model(agg_stats, stats)
+        for model_id in grades:
+            grades[model_id]["categories"] = categories[model_id]
+
+        verdict = {"winner": None, "rationale": "No models were run."}
+        if models:
+            verdict = judge.overall_verdict(
+                {m: {"score": grades[m]["score"], "letter": grades[m]["letter"]} for m in models},
+                creds=prepared,
+                backend=judge_backend,
+            )
+    except Exception as e:
+        return {"error": scrub.scrub(str(e), raw_creds)}
+
+    run_result = {
+        "run_id": str(uuid.uuid4()),
+        "created_at": time.time(),
+        "results": results,
+        "grades": grades,
+        "stats": stats,
+        "verdict": verdict,
+    }
+    _run_history.append(run_result)
+    return run_result
+
+
+@mcp.tool()
+def list_runs() -> dict:
+    """List metadata for the 5 most recent runs, newest first."""
+    runs = [
+        {"run_id": r["run_id"], "created_at": r["created_at"], "winner": r["verdict"].get("winner")}
+        for r in reversed(_run_history)
+    ]
+    return {"runs": runs}
+
+
+def _find_run(run_id):
+    if not _run_history:
+        return None
+    if run_id is None:
+        return _run_history[-1]
+    return next((r for r in _run_history if r["run_id"] == run_id), None)
+
+
+@mcp.tool()
+def get_report(run_id: str | None = None) -> dict:
+    """Get a PDF report (base64-encoded) for a run. Defaults to the most recent run."""
+    run_result = _find_run(run_id)
+    if not run_result:
+        return {"error": "no_run_available"}
+    pdf_bytes = report.build_pdf(run_result)
+    return {"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii")}
+
+
+@mcp.tool()
+def get_report_csv(run_id: str | None = None) -> dict:
+    """Get a CSV export for a run, one row per (test case x model) cell. Defaults to the most recent run."""
+    run_result = _find_run(run_id)
+    if not run_result:
+        return {"error": "no_run_available"}
+    return {"csv": report.build_csv(run_result)}
+
+
+if __name__ == "__main__":
+    mcp.run()

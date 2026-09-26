@@ -91,6 +91,14 @@ def prepare_creds(creds):
     return prepared
 
 
+def normalize_creds(creds=None, api_key=None):
+    if isinstance(creds, dict) and creds:
+        return creds
+    if _nonempty_str(api_key):
+        return {"openrouter": api_key}
+    return None
+
+
 def _creds_for(backend, creds):
     backend_creds = (creds or {}).get(backend)
     if not backend_creds:

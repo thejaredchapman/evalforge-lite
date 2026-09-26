@@ -65,3 +65,103 @@ def test_grade_model_with_no_data_returns_none_score_and_letter():
     assert result["score"] is None
     assert result["letter"] is None
     assert "No scoring data" in result["sentence"]
+
+
+def test_category_scores_computes_accuracy_and_rule_checks():
+    categories = grading.category_scores(
+        judge_scores=[4, 4], rule_check_results=[True, False],
+        cost_usd=0.01, all_costs=[0.01, 0.02], latency_ms=100, all_latencies=[100, 200],
+    )
+    assert categories["accuracy"] == 80.0
+    assert categories["rule_checks"] == 50.0
+
+
+def test_category_scores_cost_and_speed_are_relative_to_the_run():
+    # cheapest/fastest in the run should score 100
+    categories = grading.category_scores(
+        judge_scores=[], rule_check_results=[],
+        cost_usd=0.01, all_costs=[0.01, 0.05], latency_ms=100, all_latencies=[100, 500],
+    )
+    assert categories["cost_efficiency"] == 100.0
+    assert categories["speed"] == 100.0
+
+    # the pricier/slower one should score lower
+    categories2 = grading.category_scores(
+        judge_scores=[], rule_check_results=[],
+        cost_usd=0.05, all_costs=[0.01, 0.05], latency_ms=500, all_latencies=[100, 500],
+    )
+    assert categories2["cost_efficiency"] == 0.0
+    assert categories2["speed"] == 0.0
+
+
+def test_category_scores_all_equal_costs_score_100():
+    categories = grading.category_scores(
+        judge_scores=[], rule_check_results=[],
+        cost_usd=0.02, all_costs=[0.02, 0.02], latency_ms=150, all_latencies=[150, 150],
+    )
+    assert categories["cost_efficiency"] == 100.0
+    assert categories["speed"] == 100.0
+
+
+def test_category_scores_missing_data_is_none():
+    categories = grading.category_scores(
+        judge_scores=[], rule_check_results=[],
+        cost_usd=None, all_costs=[], latency_ms=None, all_latencies=[],
+    )
+    assert categories == {
+        "accuracy": None, "rule_checks": None, "cost_efficiency": None, "speed": None,
+    }
+
+
+def _cell(model_id, judge_score=None, judge_rationale=None, checks=None, latency_ms=10):
+    return {
+        "model_id": model_id, "blocked": False, "error": None,
+        "response_text": "x", "latency_ms": latency_ms, "cost_usd": 0.001, "tokens": 5,
+        "checks": checks or [], "judge_score": judge_score, "judge_rationale": judge_rationale,
+    }
+
+
+def test_best_model_for_test_case_picks_highest_judge_score():
+    cells = {
+        "model-a": _cell("model-a", judge_score=3, judge_rationale="Okay."),
+        "model-b": _cell("model-b", judge_score=5, judge_rationale="Excellent and precise."),
+    }
+    result = grading.best_model_for_test_case(cells)
+    assert result["model_id"] == "model-b"
+    assert "5/5" in result["reason"]
+    assert "Excellent and precise." in result["reason"]
+
+
+def test_best_model_for_test_case_falls_back_to_rule_checks():
+    cells = {
+        "model-a": _cell("model-a", checks=[{"check": {}, "passed": True}, {"check": {}, "passed": False}]),
+        "model-b": _cell("model-b", checks=[{"check": {}, "passed": True}, {"check": {}, "passed": True}]),
+    }
+    result = grading.best_model_for_test_case(cells)
+    assert result["model_id"] == "model-b"
+    assert "2/2" in result["reason"]
+
+
+def test_best_model_for_test_case_falls_back_to_fastest_when_no_signal():
+    cells = {
+        "model-a": _cell("model-a", latency_ms=500),
+        "model-b": _cell("model-b", latency_ms=50),
+    }
+    result = grading.best_model_for_test_case(cells)
+    assert result["model_id"] == "model-b"
+    assert "fastest" in result["reason"].lower()
+
+
+def test_best_model_for_test_case_ignores_blocked_and_errored_cells():
+    cells = {
+        "model-a": {"model_id": "model-a", "blocked": True},
+        "model-b": _cell("model-b", judge_score=4, judge_rationale="Good."),
+    }
+    result = grading.best_model_for_test_case(cells)
+    assert result["model_id"] == "model-b"
+
+
+def test_best_model_for_test_case_with_no_successful_cells_returns_none():
+    cells = {"model-a": {"model_id": "model-a", "blocked": True}}
+    result = grading.best_model_for_test_case(cells)
+    assert result["model_id"] is None

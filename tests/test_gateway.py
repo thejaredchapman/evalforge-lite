@@ -214,3 +214,17 @@ def test_call_target_model_without_route_raises():
     with pytest.raises(GatewayError, match="openai/gpt-5 is not available on Bedrock."):
         gateway.call_target("openai/gpt-5@bedrock", MESSAGES,
                             {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}})
+
+
+def test_normalize_creds_prefers_creds_dict():
+    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
+    assert gateway.normalize_creds(creds, "sk-or-v1-x") is creds
+
+
+def test_normalize_creds_turns_legacy_api_key_into_openrouter_creds():
+    assert gateway.normalize_creds(None, "sk-or-v1-x") == {"openrouter": "sk-or-v1-x"}
+
+
+@pytest.mark.parametrize("creds,api_key", [(None, None), ({}, ""), ("sk-or-v1-x", None), (None, 42)])
+def test_normalize_creds_returns_none_when_unusable(creds, api_key):
+    assert gateway.normalize_creds(creds, api_key) is None

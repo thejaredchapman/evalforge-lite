@@ -1,0 +1,340 @@
+:root {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --fg: #2a2a2a;
+  --muted: #8a8a8a;
+  --border: #eeeeee;
+  --overlay: rgba(0, 0, 0, 0.3);
+  --best-model-bg: #f0f9f2;
+
+  --grade-a: #1e8e3e;
+  --grade-b: #f9ab00;
+  --grade-c: #f9ab00;
+  --grade-d: #d93025;
+  --grade-f: #d93025;
+
+  --status-pass: #1e8e3e;
+  --status-fail: #d93025;
+  --status-blocked: #d93025;
+}
+
+/* Follows the OS/browser preference unless the user has explicitly chosen a theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16181c;
+    --surface: #21242a;
+    --fg: #e8e8e8;
+    --muted: #9a9a9a;
+    --border: #33363c;
+    --overlay: rgba(0, 0, 0, 0.5);
+    --best-model-bg: #14231a;
+  }
+}
+
+/* Explicit user choice via the theme toggle always wins over the OS preference. */
+:root[data-theme="dark"] {
+  --bg: #16181c;
+  --surface: #21242a;
+  --fg: #e8e8e8;
+  --muted: #9a9a9a;
+  --border: #33363c;
+  --overlay: rgba(0, 0, 0, 0.5);
+  --best-model-bg: #14231a;
+}
+
+* { box-sizing: border-box; }
+
+/* The hidden attribute must always win, even over elements whose class sets
+   its own display value (e.g. .model-grid's display:flex) — author-stylesheet
+   rules otherwise beat the UA's default [hidden]{display:none} regardless of
+   selector specificity, silently making `el.hidden = true` a no-op. */
+[hidden] { display: none !important; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Courier New", Courier, monospace;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  line-height: 1.6;
+}
+
+header { margin-bottom: 28px; position: relative; }
+header h1 { font-size: 24px; margin: 0 0 4px; }
+.accent-brand { color: #10A37F; }
+header .tagline { color: var(--muted); margin: 0; }
+
+.menu-toggle {
+  display: none;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mobile-menu {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 240px;
+  max-width: 80vw;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 30;
+  padding: 64px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+}
+.mobile-menu.open { transform: translateX(0); }
+.mobile-menu a { color: var(--fg); text-decoration: none; font-size: 14px; }
+.mobile-menu a:hover { color: #10A37F; }
+
+.menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 25;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .menu-toggle { display: block; }
+  .theme-toggle { right: 64px; }
+}
+
+h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+section { margin-bottom: 28px; }
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+}
+
+label { display: block; margin-bottom: 6px; font-size: 13px; }
+
+input[type="password"], input[type="text"], textarea {
+  font-family: inherit;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+textarea { max-width: 100%; min-height: 60px; resize: vertical; }
+
+.status-text { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+button {
+  font-family: inherit;
+  font-size: 13px;
+  background: var(--fg);
+  color: var(--bg);
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  cursor: pointer;
+}
+
+button:hover { opacity: 0.85; }
+button.secondary { background: var(--surface); color: var(--fg); border: 1px solid var(--border); }
+
+.model-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+
+.model-badge {
+  border: 1px solid var(--accent, var(--border));
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--accent, var(--fg));
+  transition: background 0.15s, color 0.15s;
+}
+.model-badge.selected { background: var(--accent); color: #fff; }
+
+.provider-block { margin-bottom: 16px; }
+.provider-block h3 { font-size: 13px; margin: 0 0 4px; }
+.provider-blurb { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+.provider-blurb a { color: #10A37F; }
+
+.show-more-btn { font-size: 11px; padding: 5px 10px; margin: 4px 0 8px; }
+.show-more-btn + .model-grid { margin-top: 4px; }
+
+.custom-model-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.custom-model-input-row input { max-width: 280px; }
+
+.custom-model-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+
+.custom-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px 6px 12px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--surface);
+}
+
+.custom-model-chip button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.custom-model-chip button:hover { color: var(--fg); opacity: 1; }
+
+.testcase-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.testcase-eval-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.eval-feedback { font-size: 12px; color: var(--muted); }
+
+.history-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.history-tab {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--muted);
+}
+.history-tab.active { color: var(--fg); border-color: var(--fg); font-weight: bold; }
+
+.leaderboard { padding: 0; overflow: hidden; }
+.chart-card { padding: 16px; }
+.leaderboard-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.leaderboard-row:last-child { border-bottom: none; }
+.leaderboard-model { font-weight: bold; }
+.leaderboard-meta { color: var(--muted); font-size: 11px; }
+.leaderboard-sentence { color: var(--muted); font-size: 12px; flex-basis: 100%; margin-top: 2px; }
+
+.category-chips { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+.category-chip {
+  display: inline-block;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.best-model-banner {
+  border: 1px solid var(--grade-a);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--grade-a);
+  background: var(--best-model-bg);
+}
+
+.grade-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.grade-a { background: var(--grade-a); }
+.grade-b { background: var(--grade-b); }
+.grade-c { background: var(--grade-c); }
+.grade-d { background: var(--grade-d); }
+.grade-f { background: var(--grade-f); }
+
+.status-pass { color: var(--status-pass); }
+.status-fail { color: var(--status-fail); }
+.status-blocked {
+  display: inline-block;
+  color: #fff;
+  background: var(--status-blocked);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.results-cell {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.download-row { display: flex; gap: 10px; margin-top: 16px; }
+
+.page-footer {
+  text-align: center;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.page-footer a { color: var(--muted); }
+.page-footer a:hover { color: #10A37F; }

@@ -5,3 +5,7 @@ google-auth
 fpdf2
 pdfplumber
 pytest
+mcp[cli]
+pytest-asyncio
+gunicorn
+matplotlib
