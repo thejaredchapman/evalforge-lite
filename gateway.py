@@ -103,7 +103,7 @@ def _creds_for(backend, creds):
 def call_backend(backend, native_model_id, messages, creds, timeout=60):
     if backend not in BACKENDS:
         raise GatewayError(f"Unknown backend: {backend}")
-    backend_creds = _creds_for(backend, creds)
+    backend_creds = _creds_for(backend, prepare_creds(creds))
     if backend == "openrouter":
         return openrouter.call_model(native_model_id, messages, api_key=backend_creds, timeout=timeout)
     if backend == "bedrock":

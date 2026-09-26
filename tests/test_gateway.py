@@ -161,6 +161,34 @@ def test_call_backend_unknown_backend_raises():
         gateway.call_backend("azure", "x", MESSAGES, {"azure": "k"})
 
 
+@patch("gateway.bedrock.call_model", return_value=FAKE_RESULT)
+def test_call_backend_validates_raw_creds_before_dispatch(mock_call):
+    with pytest.raises(GatewayError, match="Bedrock region is missing or invalid."):
+        gateway.call_backend("bedrock", "amazon.nova-pro-v1:0", MESSAGES,
+                             {"bedrock": {"region": "x.evil.com#", "api_key": "ABSKexample"}})
+    mock_call.assert_not_called()
+
+
+@pytest.mark.parametrize("backend,raw", [
+    ("bedrock", {"api_key": "ABSKexample"}),
+    ("bedrock", {"region": "us-east-1"}),
+    ("vertex", {"access_token": "ya29.x"}),
+    ("vertex", {"project": "my-project-123", "access_token": "ya29.x"}),
+])
+def test_call_backend_incomplete_creds_raise_gateway_error(backend, raw):
+    with pytest.raises(GatewayError):
+        gateway.call_backend(backend, "some-model", MESSAGES, {backend: raw})
+
+
+@patch("gateway.vertex.mint_token")
+@patch("gateway.vertex.call_model", return_value=FAKE_RESULT)
+def test_call_backend_does_not_remint_prepared_vertex_creds(mock_call, mock_mint):
+    prepared = {"vertex": {"project": "my-project-123", "region": "us-central1", "access_token": "ya29.x"}}
+    gateway.call_backend("vertex", "google/gemini-2.5-flash", MESSAGES, prepared)
+    mock_mint.assert_not_called()
+    assert mock_call.call_args[0][2] == prepared["vertex"]
+
+
 def test_estimate_cost():
     assert gateway.estimate_cost({"input_per_m": 3.0, "output_per_m": 15.0}, 1_000_000, 100_000) == 4.5
     assert gateway.estimate_cost(None, 1000, 1000) == 0.0
