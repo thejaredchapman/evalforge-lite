@@ -2,15 +2,16 @@
 
 <!-- mcp-name: io.github.thejaredchapman/evalforge-lite -->
 
-Compare text LLMs across providers via OpenRouter — bring your own API key.
-Available as a web app and as an MCP server.
+Compare text LLMs across providers — OpenRouter, Amazon Bedrock, and Google
+Vertex AI — bring your own credentials. Available as a web app and as an
+MCP server.
 
 ## Setup
 
     python3.12 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
-    cp .env.example .env   # optional: override JUDGE_MODEL
+    cp .env.example .env   # optional: override the per-backend judge models
 
 Requires Python 3.10+ (the `mcp` package's floor); developed and tested on 3.12.
 
@@ -18,19 +19,22 @@ Requires Python 3.10+ (the `mcp` package's floor); developed and tested on 3.12.
 
     python app.py
 
-Open http://localhost:8000, paste your OpenRouter API key (never sent
-anywhere but this server, never stored server-side beyond the request),
-add test cases, pick models, and run. Set `PORT=<port>` to run on a
-different port, or `FLASK_DEBUG=1` if you need Flask's interactive
-debugger — it's off by default since this app handles live API keys.
+Open http://localhost:8000, add credentials for the backend(s) you want to
+use (never sent anywhere but this server, never stored server-side beyond
+the request), add test cases, pick models, and run. Set `PORT=<port>` to
+run on a different port, or `FLASK_DEBUG=1` if you need Flask's
+interactive debugger — it's off by default since this app handles live
+credentials.
 
 ### Try it out
 
-1. Paste an OpenRouter API key into the "OpenRouter API key" field.
+1. Open the credentials panel and fill in the backend(s) you'll use (see
+   [Backends](#backends-openrouter-amazon-bedrock-google-vertex-ai) below).
 2. Add a test case: a prompt, and optionally a rubric (scored by an LLM
    judge) and/or rule-based checks (e.g. "contains", "max_length").
 3. Pick two or more models, ideally from different providers, from the
-   frontier list or by browsing providers.
+   frontier list or by browsing providers — click a model's Bedrock/Vertex
+   chip to also run it on that backend.
 4. Click **Run comparison** — you'll get a leaderboard with letter grades,
    per-model cost/latency, and an overall verdict, plus a per-cell view of
    every model's actual response.
@@ -39,6 +43,39 @@ debugger — it's off by default since this app handles live API keys.
 **Heads up before you click Run repeatedly while testing:** it's
 rate-limited to 3 runs per 8 hours per browser session (resets if you
 restart the server) — see [Notes](#notes).
+
+## Backends: OpenRouter, Amazon Bedrock, Google Vertex AI
+
+Every request carries its own credentials — nothing is read from server
+env/config, and credentials are never stored beyond the request that used
+them.
+
+- **OpenRouter** — a single API key.
+- **Amazon Bedrock** — either a Bedrock API key (bearer token) or an AWS
+  access key id + secret access key (optionally with a session token), plus
+  a region.
+- **Google Vertex AI** — either an OAuth access token or a service-account
+  JSON key, plus a GCP project id and a region.
+
+A model *target* is `"<catalog id>"` for OpenRouter, or `"<catalog
+id>@bedrock"` / `"<catalog id>@vertex"` to run that same model on Bedrock or
+Vertex instead. In the UI, pick a target by clicking a model's Bedrock or
+Vertex chip (shown under any model the catalog has a route for) rather than
+typing the `@backend` suffix by hand.
+
+The **judge backend** picker (next to the credentials panel) selects which
+backend runs the LLM judge and the policy gate — it can differ from the
+backend(s) the models under test run on, but needs its own credentials
+filled in.
+
+Bedrock/Vertex costs shown in the leaderboard and reports are *estimates*,
+computed from the per-token prices in `data/providers.json`, not costs
+reported back by AWS/GCP billing.
+
+Some Bedrock/Vertex routes are region-restricted: Vertex's Llama MaaS
+models are only offered in certain regions (e.g. `us-east5`), and Gemini
+preview models may need the `global` region instead of a specific one. If a
+run fails with a routing/availability error, try a different region.
 
 ## MCP server
 
@@ -66,6 +103,14 @@ State (policy, run history, rate limit) is per-process, since one stdio
 connection is one client. It's a local-only interface (stdio requires the
 server to run on the same machine as the client) — there's nothing to
 "deploy" for it.
+
+`run_comparison` and `evaluate_prompt` both take a `creds` argument —
+`{"openrouter"?: str, "bedrock"?: {region, api_key} | {region, access_key_id,
+secret_access_key, session_token?}, "vertex"?: {project, region, access_token}
+| {project, region, service_account_json}}` — plus a `judge_backend` (default
+`"openrouter"`) picking which backend runs the judge and policy gate. The
+legacy `api_key` string argument still works and is treated as an
+OpenRouter key (equivalent to `creds={"openrouter": api_key}`).
 
 ### Publishing to the official MCP registry
 
@@ -101,8 +146,9 @@ correct default for local-only use) — either run behind gunicorn the same
 way (`gunicorn --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app`), or
 set `HOST=0.0.0.0` if invoking `python app.py` directly. Once deployed,
 the URL is reachable by anyone who has it; each visitor supplies their own
-OpenRouter key (never yours), so you aren't billed for their usage, but
-your hosting's bandwidth/CPU is shared across everyone who uses it.
+credentials for whichever backend(s) they use (never yours), so you aren't
+billed for their model usage, but your hosting's bandwidth/CPU is shared
+across everyone who uses it.
 
 ## Test
 
