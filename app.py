@@ -80,6 +80,9 @@ def api_evaluate_prompt():
     judge_backend = body.get("judge_backend", "openrouter")
     if judge_backend not in gateway.BACKENDS:
         return _with_session_cookie(_error_response("Invalid judge_backend.", 400), session_id)
+    creds, creds_error = gateway.check_run_creds(raw_creds, [], judge_backend)
+    if creds_error:
+        return _with_session_cookie(_error_response(creds_error, 400), session_id)
 
     limit_result = limiter.check_and_record(f"evaluate:{session_id}", time.time())
     if not limit_result["allowed"]:
@@ -87,7 +90,7 @@ def api_evaluate_prompt():
         resp.status_code = 429
         return _with_session_cookie(resp, session_id)
 
-    result = judge.evaluate_prompt(body["prompt"], creds=gateway.prepare_creds(raw_creds), backend=judge_backend)
+    result = judge.evaluate_prompt(body["prompt"], creds=creds, backend=judge_backend)
     return _with_session_cookie(jsonify(result), session_id)
 
 
@@ -181,10 +184,9 @@ def api_run():
     with _store_lock:
         policy_text = _policy_store.get(session_id)
 
-    if policy_text and not raw_creds.get(judge_backend):
-        label = gateway.BACKEND_LABELS[judge_backend]
-        message = f"A policy is loaded, so {label} credentials are required for the judge backend."
-        return _with_session_cookie(_error_response(message, 400), session_id)
+    creds, creds_error = gateway.check_run_creds(raw_creds, model_ids, judge_backend)
+    if creds_error:
+        return _with_session_cookie(_error_response(creds_error, 400), session_id)
 
     limit_result = limiter.check_and_record(session_id, time.time())
     if not limit_result["allowed"]:
@@ -193,7 +195,6 @@ def api_run():
         return _with_session_cookie(resp, session_id)
 
     try:
-        creds = gateway.prepare_creds(raw_creds)
         results = runner.run(
             test_cases, model_ids, creds=creds, policy_text=policy_text, judge_backend=judge_backend
         )

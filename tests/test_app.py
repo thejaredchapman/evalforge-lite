@@ -388,3 +388,44 @@ def test_api_evaluate_prompt_invalid_judge_backend_returns_400():
         "prompt": "hi", "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "azure",
     })
     assert resp.status_code == 400
+
+
+def test_api_run_without_judge_creds_returns_400_even_without_policy():
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"],
+        "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "bedrock",
+    })
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Bedrock credentials are required for the judge backend."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+def test_api_run_invalid_backend_creds_rejected_before_rate_limit():
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["anthropic/claude-sonnet-4.5@bedrock"],
+        "creds": {"openrouter": "sk-or-v1-test", "bedrock": {"region": "x.evil.com#", "api_key": "ABSKexample"}},
+    })
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Bedrock region is missing or invalid."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_ignores_bad_creds_for_backends_the_run_does_not_use(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"],
+        "creds": {"openrouter": "sk-or-v1-test", "vertex": {"project": "BAD PROJECT", "region": "us-central1",
+                                                             "access_token": "ya29.x"}},
+    })
+    assert resp.status_code == 200
+
+
+def test_api_evaluate_prompt_without_judge_creds_returns_400():
+    resp = _client().post("/api/evaluate-prompt", json={
+        "prompt": "hi", "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "vertex",
+    })
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Vertex AI credentials are required for the judge backend."

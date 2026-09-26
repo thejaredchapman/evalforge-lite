@@ -246,6 +246,7 @@ def test_run_comparison_error_scrubs_secret_by_exact_value():
             test_cases=[{"prompt": "q1"}], models=["anthropic/claude-sonnet-4.5@bedrock"],
             creds={"bedrock": {"region": "us-east-1", "access_key_id": "AKIAABCDEFGHIJKLMNOP",
                                "secret_access_key": secret}},
+            judge_backend="bedrock",
         )
     assert secret not in result["error"]
 
@@ -263,3 +264,24 @@ def test_evaluate_prompt_tool_accepts_creds(mock_evaluate):
 def test_evaluate_prompt_tool_without_creds_returns_error():
     result = mcp_server.evaluate_prompt("hi")
     assert "creds" in result["error"]
+
+
+def test_run_comparison_without_judge_creds_returns_error_even_without_policy():
+    result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"],
+                                       api_key="sk-or-v1-test", judge_backend="bedrock")
+    assert result["error"] == "Bedrock credentials are required for the judge backend."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+def test_run_comparison_invalid_backend_creds_rejected_before_rate_limit():
+    result = mcp_server.run_comparison(
+        test_cases=[{"prompt": "q1"}], models=["anthropic/claude-sonnet-4.5@bedrock"],
+        creds={"openrouter": "sk-or-v1-test", "bedrock": {"region": "x.evil.com#", "api_key": "ABSKexample"}},
+    )
+    assert result["error"] == "Bedrock region is missing or invalid."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+def test_evaluate_prompt_tool_without_judge_creds_returns_error():
+    result = mcp_server.evaluate_prompt("hi", api_key="sk-or-v1-test", judge_backend="vertex")
+    assert result["error"] == "Vertex AI credentials are required for the judge backend."

@@ -279,3 +279,24 @@ def test_normalize_creds_turns_legacy_api_key_into_openrouter_creds():
 @pytest.mark.parametrize("creds,api_key", [(None, None), ({}, ""), ("sk-or-v1-x", None), (None, 42)])
 def test_normalize_creds_returns_none_when_unusable(creds, api_key):
     assert gateway.normalize_creds(creds, api_key) is None
+
+
+def test_check_run_creds_requires_judge_backend_creds():
+    prepared, error = gateway.check_run_creds({"openrouter": "sk-or-v1-test"}, ["openai/gpt-5"], "vertex")
+    assert prepared is None
+    assert error == "Vertex AI credentials are required for the judge backend."
+
+
+def test_check_run_creds_reports_errors_only_for_needed_backends():
+    raw = {"openrouter": "sk-or-v1-test", "bedrock": {"region": "nowhere", "api_key": "ABSKexample"}}
+    _, unused_error = gateway.check_run_creds(raw, ["openai/gpt-5"], "openrouter")
+    assert unused_error is None
+    _, used_error = gateway.check_run_creds(raw, ["anthropic/claude-sonnet-4.5@bedrock"], "openrouter")
+    assert used_error == "Bedrock region is missing or invalid."
+
+
+def test_check_run_creds_returns_prepared_creds_when_usable():
+    raw = {"openrouter": "sk-or-v1-test", "bedrock": {"region": "us-east-1", "api_key": "ABSKexample", "x": 1}}
+    prepared, error = gateway.check_run_creds(raw, ["anthropic/claude-sonnet-4.5@bedrock", ""], "openrouter")
+    assert error is None
+    assert prepared == {"openrouter": "sk-or-v1-test", "bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}

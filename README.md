@@ -108,7 +108,9 @@ server to run on the same machine as the client) — there's nothing to
 `{"openrouter"?: str, "bedrock"?: {region, api_key} | {region, access_key_id,
 secret_access_key, session_token?}, "vertex"?: {project, region, access_token}
 | {project, region, service_account_json}}` — plus a `judge_backend` (default
-`"openrouter"`) picking which backend runs the judge and policy gate. The
+`"openrouter"`) picking which backend runs the judge and policy gate. Creds for
+the judge backend are always required, and malformed creds for any backend the
+call uses are rejected up front, before the call counts against the rate limit. The
 legacy `api_key` string argument still works and is treated as an
 OpenRouter key (equivalent to `creds={"openrouter": api_key}`).
 

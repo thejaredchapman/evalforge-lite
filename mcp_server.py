@@ -62,10 +62,13 @@ def evaluate_prompt(prompt: str, api_key: str = "", creds: dict | None = None,
         return {"error": "Missing required field: creds (or api_key)."}
     if judge_backend not in gateway.BACKENDS:
         return {"error": "Invalid judge_backend."}
+    prepared, creds_error = gateway.check_run_creds(raw_creds, [], judge_backend)
+    if creds_error:
+        return {"error": creds_error}
     limit_result = limiter.check_and_record(_EVALUATE_RATE_LIMIT_KEY, time.time())
     if not limit_result["allowed"]:
         return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
-    return judge.evaluate_prompt(prompt, creds=gateway.prepare_creds(raw_creds), backend=judge_backend)
+    return judge.evaluate_prompt(prompt, creds=prepared, backend=judge_backend)
 
 
 def _aggregate_stats(results, model_ids):
@@ -134,16 +137,15 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
         return {"error": "Missing required field: creds (or api_key)."}
     if judge_backend not in gateway.BACKENDS:
         return {"error": "Invalid judge_backend."}
-    if _policy_text and not raw_creds.get(judge_backend):
-        label = gateway.BACKEND_LABELS[judge_backend]
-        return {"error": f"A policy is set, so {label} credentials are required for the judge backend."}
+    prepared, creds_error = gateway.check_run_creds(raw_creds, models, judge_backend)
+    if creds_error:
+        return {"error": creds_error}
 
     limit_result = limiter.check_and_record(_RATE_LIMIT_KEY, time.time())
     if not limit_result["allowed"]:
         return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
 
     try:
-        prepared = gateway.prepare_creds(raw_creds)
         results = runner.run(test_cases, models, creds=prepared, policy_text=_policy_text, judge_backend=judge_backend)
 
         for row in results:

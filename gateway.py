@@ -128,6 +128,29 @@ def normalize_creds(creds=None, api_key=None):
     return None
 
 
+def check_run_creds(raw_creds, targets, judge_backend):
+    """Up-front check before a rate-limited call: returns (prepared_creds, error_message_or_None).
+
+    The judge backend always needs creds (it runs the verdict, rubric judging, and policy gate).
+    Prepare errors are reported only for backends this call actually uses.
+    """
+    if not raw_creds.get(judge_backend):
+        return None, f"{BACKEND_LABELS[judge_backend]} credentials are required for the judge backend."
+    prepared = prepare_creds(raw_creds)
+    needed = {judge_backend}
+    for target in targets:
+        try:
+            needed.add(parse_target(target)[1])
+        except GatewayError:
+            continue
+    errors = [
+        prepared[backend]["error"]
+        for backend in BACKENDS
+        if backend in needed and isinstance(prepared.get(backend), dict) and "error" in prepared[backend]
+    ]
+    return prepared, " ".join(errors) or None
+
+
 def _creds_for(backend, creds):
     backend_creds = (creds or {}).get(backend)
     if not backend_creds:
