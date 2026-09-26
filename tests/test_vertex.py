@@ -111,3 +111,9 @@ def test_mint_token_wraps_auth_failures_without_leaking_detail(mock_from_info):
         vertex.mint_token({"type": "service_account"})
 
     assert "PRIVATE KEY" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("bad_info", [None, "not a dict", ["list"]])
+def test_mint_token_non_mapping_input_raises_vertex_error(bad_info):
+    with pytest.raises(vertex.VertexError):
+        vertex.mint_token(bad_info)

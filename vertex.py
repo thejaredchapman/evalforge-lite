@@ -24,9 +24,9 @@ def endpoint_url(project, region):
 
 
 def mint_token(service_account_info):
-    # Never trust a caller-supplied token_uri: google-auth POSTs a signed JWT to it.
-    info = {**service_account_info, "token_uri": TOKEN_URI}
     try:
+        # Never trust a caller-supplied token_uri: google-auth POSTs a signed JWT to it.
+        info = {**service_account_info, "token_uri": TOKEN_URI}
         sa_creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
         sa_creds.refresh(Request())
     except (ValueError, KeyError, TypeError, google.auth.exceptions.GoogleAuthError) as e:
