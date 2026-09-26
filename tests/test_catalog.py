@@ -45,3 +45,26 @@ def test_family_suggestions_stay_within_same_provider():
 def test_family_suggestions_for_unknown_model_returns_empty_list():
     cat = catalog.load_catalog()
     assert catalog.suggest_family(cat, "nonexistent/model") == []
+
+
+def test_route_for_returns_backend_route():
+    cat = catalog.load_catalog()
+    route = catalog.route_for(cat, "anthropic/claude-sonnet-4.5", "bedrock")
+    assert route["id"] == "{geo}.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+
+def test_route_for_missing_backend_or_model_returns_none():
+    cat = catalog.load_catalog()
+    assert catalog.route_for(cat, "openai/gpt-5", "bedrock") is None
+    assert catalog.route_for(cat, "nonexistent/model", "vertex") is None
+
+
+def test_every_route_is_well_formed():
+    cat = catalog.load_catalog()
+    for provider in cat.values():
+        for model in provider["models"]:
+            for backend, route in (model.get("routes") or {}).items():
+                assert backend in ("bedrock", "vertex")
+                assert isinstance(route["id"], str) and route["id"]
+                assert set(route["price"]) == {"input_per_m", "output_per_m"}
+                assert all(isinstance(v, (int, float)) and v >= 0 for v in route["price"].values())

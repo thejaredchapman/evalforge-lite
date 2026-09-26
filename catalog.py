@@ -27,3 +27,11 @@ def suggest_family(catalog_dict, model_id):
                     if m["family"] == family and m["id"] != model_id
                 ]
     return []
+
+
+def route_for(catalog_dict, model_id, backend):
+    for provider in catalog_dict.values():
+        for model in provider["models"]:
+            if model["id"] == model_id:
+                return (model.get("routes") or {}).get(backend)
+    return None

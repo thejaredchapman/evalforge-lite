@@ -15,9 +15,9 @@
     "color": "#D97757",
     "frontier": "anthropic/claude-opus-4.5",
     "models": [
-      {"id": "anthropic/claude-opus-4.5", "name": "Claude Opus 4.5", "family": "claude-opus"},
-      {"id": "anthropic/claude-sonnet-4.5", "name": "Claude Sonnet 4.5", "family": "claude-sonnet"},
-      {"id": "anthropic/claude-haiku-4.5", "name": "Claude Haiku 4.5", "family": "claude-haiku"}
+      {"id": "anthropic/claude-opus-4.5", "name": "Claude Opus 4.5", "family": "claude-opus", "routes": {"bedrock": {"id": "{geo}.anthropic.claude-opus-4-5-20251101-v1:0", "price": {"input_per_m": 5.0, "output_per_m": 25.0}}}},
+      {"id": "anthropic/claude-sonnet-4.5", "name": "Claude Sonnet 4.5", "family": "claude-sonnet", "routes": {"bedrock": {"id": "{geo}.anthropic.claude-sonnet-4-5-20250929-v1:0", "price": {"input_per_m": 3.0, "output_per_m": 15.0}}}},
+      {"id": "anthropic/claude-haiku-4.5", "name": "Claude Haiku 4.5", "family": "claude-haiku", "routes": {"bedrock": {"id": "{geo}.anthropic.claude-haiku-4-5-20251001-v1:0", "price": {"input_per_m": 1.0, "output_per_m": 5.0}}}}
     ]
   },
   "google": {
@@ -25,9 +25,9 @@
     "color": "#4285F4",
     "frontier": "google/gemini-3-pro",
     "models": [
-      {"id": "google/gemini-3-pro", "name": "Gemini 3 Pro", "family": "gemini-3"},
-      {"id": "google/gemini-3-flash", "name": "Gemini 3 Flash", "family": "gemini-3"},
-      {"id": "google/gemini-2.0-flash", "name": "Gemini 2.0 Flash", "family": "gemini-2"}
+      {"id": "google/gemini-3-pro", "name": "Gemini 3 Pro", "family": "gemini-3", "routes": {"vertex": {"id": "google/gemini-3-pro-preview", "price": {"input_per_m": 2.0, "output_per_m": 12.0}}}},
+      {"id": "google/gemini-3-flash", "name": "Gemini 3 Flash", "family": "gemini-3", "routes": {"vertex": {"id": "google/gemini-3-flash-preview", "price": {"input_per_m": 0.5, "output_per_m": 3.0}}}},
+      {"id": "google/gemini-2.0-flash", "name": "Gemini 2.0 Flash", "family": "gemini-2", "routes": {"vertex": {"id": "google/gemini-2.0-flash-001", "price": {"input_per_m": 0.15, "output_per_m": 0.6}}}}
     ]
   },
   "meta-llama": {
@@ -35,9 +35,9 @@
     "color": "#0668E1",
     "frontier": "meta-llama/llama-4-maverick",
     "models": [
-      {"id": "meta-llama/llama-4-maverick", "name": "Llama 4 Maverick", "family": "llama-4"},
-      {"id": "meta-llama/llama-4-scout", "name": "Llama 4 Scout", "family": "llama-4"},
-      {"id": "meta-llama/llama-3.3-70b-instruct", "name": "Llama 3.3 70B", "family": "llama-3"}
+      {"id": "meta-llama/llama-4-maverick", "name": "Llama 4 Maverick", "family": "llama-4", "routes": {"bedrock": {"id": "{geo}.meta.llama4-maverick-17b-instruct-v1:0", "price": {"input_per_m": 0.24, "output_per_m": 0.97}}, "vertex": {"id": "meta/llama-4-maverick-17b-128e-instruct-maas", "price": {"input_per_m": 0.35, "output_per_m": 1.15}}}},
+      {"id": "meta-llama/llama-4-scout", "name": "Llama 4 Scout", "family": "llama-4", "routes": {"bedrock": {"id": "{geo}.meta.llama4-scout-17b-instruct-v1:0", "price": {"input_per_m": 0.17, "output_per_m": 0.66}}, "vertex": {"id": "meta/llama-4-scout-17b-16e-instruct-maas", "price": {"input_per_m": 0.25, "output_per_m": 0.7}}}},
+      {"id": "meta-llama/llama-3.3-70b-instruct", "name": "Llama 3.3 70B", "family": "llama-3", "routes": {"bedrock": {"id": "{geo}.meta.llama3-3-70b-instruct-v1:0", "price": {"input_per_m": 0.72, "output_per_m": 0.72}}, "vertex": {"id": "meta/llama-3.3-70b-instruct-maas", "price": {"input_per_m": 0.72, "output_per_m": 0.72}}}}
     ]
   }
 }

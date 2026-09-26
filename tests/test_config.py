@@ -26,3 +26,9 @@ def test_each_provider_has_required_fields():
             assert "id" in model
             assert "name" in model
             assert "family" in model
+
+
+def test_judge_models_cover_every_backend():
+    assert set(config.JUDGE_MODELS) == {"openrouter", "bedrock", "vertex"}
+    assert config.JUDGE_MODEL == config.JUDGE_MODELS["openrouter"]
+    assert config.JUDGE_MODELS["bedrock"].startswith("{geo}.")
