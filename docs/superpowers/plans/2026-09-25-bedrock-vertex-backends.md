@@ -1954,72 +1954,379 @@ git commit -m "feat: add credential scrubber covering AWS, Bedrock, GCP, and PEM
 
 ---
 
-### Task 7: Amend the finish plan, finish spec, and CLAUDE.md for the new interfaces
+### Task 7: Merge the finish branch and migrate `app.py`, `mcp_server.py`, and `judge.evaluate_prompt` to `creds`
 
-`app.py` and the frontend are not built yet — they are Tasks 2–3 of `docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md`. That plan still targets the old `api_key` interfaces, so it must be updated before it is executed. This task edits documents only; verification is by `grep` plus a full test run to prove nothing in code moved.
+> **Revised 2026-09-25.** The original Task 7 amended the unexecuted finish plan. That plan had in fact already been executed on branch `worktree-finish-evalforge-lite` (27 commits on top of `64f82ac`: `app.py`, `report.py`, `mcp_server.py`, frontend, `judge.evaluate_prompt`, grading categories, a live OpenRouter catalog, Python 3.12). This task merges that branch into `feat/bedrock-vertex-backends` and moves its server-side call sites onto the Tasks 1–6 interfaces. The frontend is Task 8.
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md`
-- Modify: `docs/superpowers/specs/2026-08-29-evalforge-lite-finish/design.md` (append an amendment section)
-- Modify: `CLAUDE.md` (untracked in git — edit it, but only `git add` it if the user has started tracking it)
+- Merge: `worktree-finish-evalforge-lite` → `feat/bedrock-vertex-backends`
+- Resolve: `data/providers.json`, `judge.py`, `runner.py`, `requirements.txt`, `catalog.py`, `tests/test_judge.py`, `tests/test_runner.py`, `tests/test_catalog.py` (whichever actually conflict)
+- Modify: `gateway.py` (add `normalize_creds`), `app.py`, `mcp_server.py`
+- Test: `tests/test_gateway.py`, `tests/test_judge.py`, `tests/test_app.py`, `tests/test_mcp_server.py`
 
 **Interfaces:**
-- Consumes: every "Produces" item from Tasks 1–6.
-- Produces: an executable finish plan whose `app.py` accepts `{"creds": {...}, "judge_backend": "..."}` (with legacy `{"api_key": "..."}` still accepted as `creds.openrouter`) and whose frontend offers a three-tab credentials panel, per-model backend chips, and a judge-backend select.
+- Consumes (from Tasks 1–6): `gateway.BACKENDS`, `gateway.BACKEND_LABELS`, `gateway.prepare_creds(creds)`, `gateway.call_backend(...)`, `gateway.GatewayError`, `runner.run(test_cases, targets, creds, policy_text=None, judge_backend="openrouter")`, `judge.overall_verdict(aggregate_stats, creds, backend="openrouter", judge_model=None)`, `config.JUDGE_MODELS`, `scrub.scrub(message, creds=None)`.
+- Consumes (from the finish branch, unchanged): `catalog.fetch_openrouter_models()`, `grading.best_model_for_test_case(cells)`, `grading.category_scores(...)`, `report.build_pdf/build_csv`, `limiter.check_and_record`.
+- Produces:
+  - `gateway.normalize_creds(creds=None, api_key=None) -> dict | None` — a non-empty `creds` dict wins; else a non-empty string `api_key` becomes `{"openrouter": api_key}`; else `None`.
+  - `judge.evaluate_prompt(prompt, creds, backend="openrouter", judge_model=None) -> {"score": int|None, "feedback": str}`
+  - `POST /api/run` body: `{"test_cases", "models", "creds" | "api_key", "judge_backend"?}`; `POST /api/evaluate-prompt` body: `{"prompt", "creds" | "api_key", "judge_backend"?}`. Legacy `api_key`-only bodies keep working.
+  - MCP tools: `evaluate_prompt(prompt, api_key="", creds=None, judge_backend="openrouter")`, `run_comparison(test_cases, models, api_key="", creds=None, judge_backend="openrouter")`.
 
-- [ ] **Step 1: Update the finish plan's Global Constraints**
+**Environment:** after the merge the project needs Python ≥ 3.10 (`mcp[cli]`; the finish branch pins 3.12 in `.python-version`). Don't touch the repo's existing 3.9 `venv/`. Build a 3.12 venv inside the git-ignored SDD workspace and use it for every command in this task:
 
-In `docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md`, replace these four bullets under `## Global Constraints`:
-
-Old:
-```
-- Do not modify `config.py`, `openrouter.py`, `catalog.py`, `checks.py`, `judge.py`, `grading.py`, `policy.py`, `limiter.py`, or `runner.py` — their existing interfaces are the contract this plan builds on.
-```
-New:
-```
-- Do not modify `config.py`, `errors.py`, `openrouter.py`, `bedrock.py`, `vertex.py`, `gateway.py`, `scrub.py`, `catalog.py`, `checks.py`, `judge.py`, `grading.py`, `policy.py`, `limiter.py`, or `runner.py` — their interfaces, as updated by `docs/superpowers/plans/2026-09-25-bedrock-vertex-backends.md`, are the contract this plan builds on.
-```
-
-Old:
-```
-- Never read an OpenRouter API key from server env/config — `api_key` is always the caller-supplied value passed through explicitly.
-```
-New:
-```
-- Never read any provider credential (OpenRouter key, AWS keys, Bedrock API key, GCP token or service account) from server env/config — `creds` is always the caller-supplied value passed through explicitly.
+```bash
+W=.superpowers/sdd/2026-09-25-bedrock-vertex-backends
+/opt/homebrew/bin/python3.12 -m venv $W/venv312
 ```
 
-Old:
+- [ ] **Step 1: Clear the two merge blockers (user-approved)**
+
+The index holds a staged `server.json` that is byte-identical to the finish branch's **older** copy from commit `ba77f63`; the merge brings that branch's current copy (`9d182fc`). The untracked `docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md` is byte-identical to the branch's copy. Both would make `git merge` refuse to run. Verify before touching them, and keep a backup of `server.json`:
+
+```bash
+W=.superpowers/sdd/2026-09-25-bedrock-vertex-backends
+test "$(git rev-parse :server.json)" = "$(git rev-parse ba77f63:server.json)" && echo "server.json matches ba77f63"
+git rm --cached -q server.json && mv server.json $W/server.json.pre-merge-backup
+F=docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md
+test "$(git hash-object $F)" = "$(git rev-parse worktree-finish-evalforge-lite:$F)" && rm $F && echo "removed identical finish plan copy"
+git status --short
 ```
-- Error messages returned to the client must never contain the user's API key — scrub with `re.compile(r"\b(sk|pk)-[A-Za-z0-9_-]{8,}\b")` → `"[REDACTED]"`.
+Expected: both `echo` lines print. If either `test` fails, STOP and report BLOCKED. Leave `.gitignore`, `CLAUDE.md`, and `.claude/` untouched.
+
+- [ ] **Step 2: Start the merge**
+
+```bash
+git merge --no-ff --no-commit worktree-finish-evalforge-lite
+git status --short
 ```
-New:
-```
-- Error messages returned to the client **or written to logs** must never contain credentials — always pass them through `scrub.scrub(message, raw_creds)`. Never use `logger.exception` on the run path (the traceback text is unscrubbed).
+Expected: some files listed as conflicted (`UU`/`AA`). Resolve each with the rules in Steps 3–4. For any conflicted file **not** named there, STOP and report NEEDS_CONTEXT.
+
+- [ ] **Step 3: Resolve backend conflicts**
+
+- `runner.py`, `tests/test_runner.py` (add/add — the finish branch's copies equal the pre-Task-5 originals): take ours.
+  ```bash
+  git checkout --ours runner.py tests/test_runner.py && git add runner.py tests/test_runner.py
+  ```
+- `requirements.txt`: the union, in this order:
+  ```
+  flask
+  requests
+  botocore
+  google-auth
+  fpdf2
+  pdfplumber
+  pytest
+  mcp[cli]
+  pytest-asyncio
+  gunicorn
+  matplotlib
+  ```
+- `catalog.py`: keep **both** additions — the finish branch's `time`/`requests` imports, `OPENROUTER_MODELS_URL`, `_CACHE_TTL_SECONDS`, `_cache`, `fetch_openrouter_models()`, **and** our `route_for()` at the end of the file.
+- `tests/test_catalog.py`: keep both sides' tests (their `fetch_openrouter_models` tests and our three route tests).
+- `data/providers.json`: take the finish branch's file (its `~…-latest` alias models and new Google lineup) and add `routes` only to models that exist in it. Final content:
+
+```json
+{
+  "openai": {
+    "blurb": "OpenAI builds the GPT model family and popularized the modern chat-assistant interface; broad general-purpose strength and the widest third-party tooling support.",
+    "color": "#10A37F",
+    "frontier": "~openai/gpt-latest",
+    "models": [
+      {"id": "~openai/gpt-latest", "name": "GPT (Latest)", "family": "gpt-5"},
+      {"id": "openai/gpt-5", "name": "GPT-5", "family": "gpt-5"},
+      {"id": "openai/gpt-5-mini", "name": "GPT-5 Mini", "family": "gpt-5"},
+      {"id": "openai/gpt-4o", "name": "GPT-4o", "family": "gpt-4o"},
+      {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "family": "gpt-4o"}
+    ]
+  },
+  "anthropic": {
+    "blurb": "Anthropic builds the Claude model family with a focus on reliability and steerability; strong at careful reasoning, following detailed instructions, and long-context work.",
+    "color": "#D97757",
+    "frontier": "~anthropic/claude-opus-latest",
+    "models": [
+      {"id": "~anthropic/claude-opus-latest", "name": "Claude Opus (Latest)", "family": "claude-opus"},
+      {"id": "anthropic/claude-opus-4.5", "name": "Claude Opus 4.5", "family": "claude-opus", "routes": {"bedrock": {"id": "{geo}.anthropic.claude-opus-4-5-20251101-v1:0", "price": {"input_per_m": 5.0, "output_per_m": 25.0}}}},
+      {"id": "anthropic/claude-sonnet-4.5", "name": "Claude Sonnet 4.5", "family": "claude-sonnet", "routes": {"bedrock": {"id": "{geo}.anthropic.claude-sonnet-4-5-20250929-v1:0", "price": {"input_per_m": 3.0, "output_per_m": 15.0}}}},
+      {"id": "anthropic/claude-haiku-4.5", "name": "Claude Haiku 4.5", "family": "claude-haiku", "routes": {"bedrock": {"id": "{geo}.anthropic.claude-haiku-4-5-20251001-v1:0", "price": {"input_per_m": 1.0, "output_per_m": 5.0}}}}
+    ]
+  },
+  "google": {
+    "blurb": "Google DeepMind builds the Gemini model family with native multimodal training and very large context windows, integrated tightly with Google's own products.",
+    "color": "#4285F4",
+    "frontier": "~google/gemini-pro-latest",
+    "models": [
+      {"id": "~google/gemini-pro-latest", "name": "Gemini Pro (Latest)", "family": "gemini-pro"},
+      {"id": "google/gemini-2.5-pro", "name": "Gemini 2.5 Pro", "family": "gemini-pro", "routes": {"vertex": {"id": "google/gemini-2.5-pro", "price": {"input_per_m": 1.25, "output_per_m": 10.0}}}},
+      {"id": "google/gemini-3.7-flash", "name": "Gemini 3.7 Flash", "family": "gemini-flash"},
+      {"id": "google/gemini-2.5-flash", "name": "Gemini 2.5 Flash", "family": "gemini-flash", "routes": {"vertex": {"id": "google/gemini-2.5-flash", "price": {"input_per_m": 0.3, "output_per_m": 2.5}}}}
+    ]
+  },
+  "meta-llama": {
+    "blurb": "Meta builds the open-weight Llama model family, widely used for self-hosting and fine-tuning where control over weights and cost matters more than using a closed API.",
+    "color": "#0668E1",
+    "frontier": "meta-llama/llama-4-maverick",
+    "models": [
+      {"id": "meta-llama/llama-4-maverick", "name": "Llama 4 Maverick", "family": "llama-4", "routes": {"bedrock": {"id": "{geo}.meta.llama4-maverick-17b-instruct-v1:0", "price": {"input_per_m": 0.24, "output_per_m": 0.97}}, "vertex": {"id": "meta/llama-4-maverick-17b-128e-instruct-maas", "price": {"input_per_m": 0.35, "output_per_m": 1.15}}}},
+      {"id": "meta-llama/llama-4-scout", "name": "Llama 4 Scout", "family": "llama-4", "routes": {"bedrock": {"id": "{geo}.meta.llama4-scout-17b-instruct-v1:0", "price": {"input_per_m": 0.17, "output_per_m": 0.66}}, "vertex": {"id": "meta/llama-4-scout-17b-16e-instruct-maas", "price": {"input_per_m": 0.25, "output_per_m": 0.7}}}},
+      {"id": "meta-llama/llama-3.3-70b-instruct", "name": "Llama 3.3 70B", "family": "llama-3", "routes": {"bedrock": {"id": "{geo}.meta.llama3-3-70b-instruct-v1:0", "price": {"input_per_m": 0.72, "output_per_m": 0.72}}, "vertex": {"id": "meta/llama-3.3-70b-instruct-maas", "price": {"input_per_m": 0.72, "output_per_m": 0.72}}}}
+    ]
+  }
+}
 ```
 
-Old:
-```
-- Validate `POST /api/run`'s JSON body explicitly (missing/malformed body, missing `api_key`/`test_cases`/`models`) and return `400` before touching any of those fields — never let a malformed request reach an unhandled exception.
-```
-New:
-```
-- Validate `POST /api/run`'s JSON body explicitly (missing/malformed body, missing `creds` (or legacy `api_key`)/`test_cases`/`models`, `judge_backend` not in `gateway.BACKENDS`) and return `400` before touching any of those fields — never let a malformed request reach an unhandled exception. If a policy is loaded and `creds` has no entry for the judge backend, return `400` **before** `limiter.check_and_record` so it doesn't cost the user a run.
+  `~…-latest` aliases are OpenRouter-only and get no routes. `google/gemini-3.7-flash` gets no route: its Vertex id isn't confirmed.
+
+- `judge.py`: our version (from Task 5), plus the finish branch's `PROMPT_EVAL_TEMPLATE` constant copied verbatim right after `VERDICT_PROMPT_TEMPLATE`, plus this `evaluate_prompt` at the end of the file (replacing the branch's `api_key` version). The file must not import `openrouter`.
+
+```python
+def evaluate_prompt(prompt, creds, backend="openrouter", judge_model=None):
+    """Pre-run feedback on prompt quality (clarity/specificity) — an optional,
+    explicitly user-triggered check, not run automatically before every comparison.
+    """
+    llm_prompt = PROMPT_EVAL_TEMPLATE.format(prompt=prompt)
+
+    try:
+        model = judge_model or config.JUDGE_MODELS[backend]
+        result = gateway.call_backend(backend, model, [{"role": "user", "content": llm_prompt}], creds)
+        parsed = _extract_json(result["text"])
+        score = int(parsed["score"])
+        feedback = str(parsed["feedback"])
+    except (gateway.GatewayError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return {"score": None, "feedback": "Could not evaluate prompt."}
+
+    return {"score": score, "feedback": feedback}
 ```
 
-- [ ] **Step 2: Update the finish plan's Task 2 Interfaces block**
+- `tests/test_judge.py`: our version (from Task 5), plus these tests at the end, replacing the branch's four `api_key`-based `evaluate_prompt` tests:
 
-Replace the `- Consumes:` line of Task 2 with:
+```python
 
+
+@patch("judge.gateway.call_backend")
+def test_evaluate_prompt_parses_clean_json_response(mock_call):
+    mock_call.side_effect = _fake_call_backend(
+        '{"score": 2, "feedback": "Too vague — specify the desired output format and length."}'
+    )
+
+    result = judge.evaluate_prompt("Tell me about dogs", creds={"openrouter": "sk-or-v1-test"})
+
+    assert result == {
+        "score": 2, "feedback": "Too vague — specify the desired output format and length.",
+    }
+
+
+@patch("judge.gateway.call_backend")
+def test_evaluate_prompt_fallback_on_malformed_response(mock_call):
+    mock_call.side_effect = _fake_call_backend("not json at all")
+
+    result = judge.evaluate_prompt("some prompt", creds={"openrouter": "sk-or-v1-test"})
+
+    assert result["score"] is None
+    assert "Could not evaluate" in result["feedback"]
+
+
+@patch("judge.gateway.call_backend")
+def test_evaluate_prompt_fallback_on_gateway_error(mock_call):
+    mock_call.side_effect = gateway.GatewayError("No Vertex AI credentials supplied.")
+
+    result = judge.evaluate_prompt("some prompt", creds={}, backend="vertex")
+
+    assert result["score"] is None
+    assert "Could not evaluate" in result["feedback"]
+
+
+@patch("judge.gateway.call_backend")
+def test_evaluate_prompt_passes_creds_backend_and_model_through(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"score": 4, "feedback": "Clear and specific."}')
+    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
+
+    judge.evaluate_prompt("some prompt", creds=creds, backend="bedrock")
+
+    args, _ = mock_call.call_args
+    assert args[0] == "bedrock"
+    assert args[1] == config.JUDGE_MODELS["bedrock"]
+    assert args[3] is creds
+
+
+def test_evaluate_prompt_unknown_backend_degrades_instead_of_raising():
+    result = judge.evaluate_prompt("some prompt", creds={}, backend="azure")
+    assert result["score"] is None
 ```
-- Consumes: `catalog.load_catalog() -> dict`, `catalog.frontier_models(dict) -> list[dict]`, `catalog.suggest_family(dict, str) -> list[dict]`, `policy.extract_text(filename, bytes) -> str`, `limiter.check_and_record(session_id, now) -> dict`, `gateway.BACKENDS`, `gateway.prepare_creds(creds) -> dict`, `runner.run(test_cases, targets, creds, policy_text=None, judge_backend="openrouter") -> list[dict]`, `grading.grade_model(judge_scores, rule_check_results, judge_rationales) -> dict`, `judge.overall_verdict(aggregate_stats, creds, backend="openrouter") -> dict`, `scrub.scrub(message, creds=None) -> str`, `report.build_pdf(run_result) -> bytes`, `report.build_csv(run_result) -> str`.
+
+After resolving each file: `git add <file>`.
+
+- [ ] **Step 4: Add `gateway.normalize_creds` (TDD)**
+
+Append to `tests/test_gateway.py`:
+
+```python
+
+
+def test_normalize_creds_prefers_creds_dict():
+    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
+    assert gateway.normalize_creds(creds, "sk-or-v1-x") is creds
+
+
+def test_normalize_creds_turns_legacy_api_key_into_openrouter_creds():
+    assert gateway.normalize_creds(None, "sk-or-v1-x") == {"openrouter": "sk-or-v1-x"}
+
+
+@pytest.mark.parametrize("creds,api_key", [(None, None), ({}, ""), ("sk-or-v1-x", None), (None, 42)])
+def test_normalize_creds_returns_none_when_unusable(creds, api_key):
+    assert gateway.normalize_creds(creds, api_key) is None
 ```
 
-Delete the Produces bullet `` - `app._scrub(message: str) -> str`. `` (scrubbing now lives in `scrub.py`).
+Run `$W/venv312/bin/pytest tests/test_gateway.py -q` after `$W/venv312/bin/pip install -r requirements.txt` → expect `AttributeError: module 'gateway' has no attribute 'normalize_creds'`. Then add to `gateway.py`, directly after `prepare_creds`:
 
-- [ ] **Step 3: Add app tests to the finish plan's Task 2 Step 1 (`tests/test_app.py`)**
+```python
+def normalize_creds(creds=None, api_key=None):
+    if isinstance(creds, dict) and creds:
+        return creds
+    if _nonempty_str(api_key):
+        return {"openrouter": api_key}
+    return None
+```
 
-Append this block to the end of the `tests/test_app.py` code block in Task 2 Step 1 (after the last existing test in that block):
+Re-run: PASS.
+
+- [ ] **Step 5: Migrate `app.py`**
+
+(a) Imports: remove `import re`; add `import gateway` (after `import catalog`) and `import scrub` (after `import runner`). Delete `_SECRET_RE = …` and the `_scrub` function.
+
+(b) Replace the whole `api_evaluate_prompt` function with:
+
+```python
+@app.route("/api/evaluate-prompt", methods=["POST"])
+def api_evaluate_prompt():
+    session_id = _get_session_id()
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return _with_session_cookie(_error_response("Request body must be JSON.", 400), session_id)
+    raw_creds = gateway.normalize_creds(body.get("creds"), body.get("api_key"))
+    if not body.get("prompt") or raw_creds is None:
+        return _with_session_cookie(
+            _error_response("Missing required field: prompt and creds (or api_key).", 400), session_id
+        )
+    judge_backend = body.get("judge_backend", "openrouter")
+    if judge_backend not in gateway.BACKENDS:
+        return _with_session_cookie(_error_response("Invalid judge_backend.", 400), session_id)
+
+    limit_result = limiter.check_and_record(f"evaluate:{session_id}", time.time())
+    if not limit_result["allowed"]:
+        resp = jsonify({"error": "rate_limited", "reset_at": limit_result["reset_at"]})
+        resp.status_code = 429
+        return _with_session_cookie(resp, session_id)
+
+    result = judge.evaluate_prompt(body["prompt"], creds=gateway.prepare_creds(raw_creds), backend=judge_backend)
+    return _with_session_cookie(jsonify(result), session_id)
+```
+
+(c) Replace the whole `_validate_run_body` function with:
+
+```python
+def _validate_run_body(body):
+    if not isinstance(body, dict):
+        return "Request body must be JSON."
+    if gateway.normalize_creds(body.get("creds"), body.get("api_key")) is None:
+        return "Missing required field: creds (or api_key)."
+    if body.get("judge_backend", "openrouter") not in gateway.BACKENDS:
+        return "Invalid judge_backend."
+    if not isinstance(body.get("test_cases"), list):
+        return "Missing required field: test_cases."
+    if not isinstance(body.get("models"), list) or not all(isinstance(m, str) for m in body["models"]):
+        return "Missing required field: models."
+    return None
+```
+
+(d) In `api_run`, make exactly these changes and nothing else. The best-model, grades, stats, and categories logic stays as it is.
+  - Replace `api_key = body["api_key"]` with:
+    ```python
+    raw_creds = gateway.normalize_creds(body.get("creds"), body.get("api_key"))
+    judge_backend = body.get("judge_backend", "openrouter")
+    ```
+  - Move the `with _store_lock: policy_text = _policy_store.get(session_id)` block up to sit right after `model_ids = body["models"]` (before the limiter), and follow it with:
+    ```python
+    if policy_text and not raw_creds.get(judge_backend):
+        label = gateway.BACKEND_LABELS[judge_backend]
+        message = f"A policy is loaded, so {label} credentials are required for the judge backend."
+        return _with_session_cookie(_error_response(message, 400), session_id)
+    ```
+  - Inside the `try:`, replace the `runner.run(...)` line with:
+    ```python
+        creds = gateway.prepare_creds(raw_creds)
+        results = runner.run(
+            test_cases, model_ids, creds=creds, policy_text=policy_text, judge_backend=judge_backend
+        )
+    ```
+  - In the `judge.overall_verdict(...)` call, replace `api_key=api_key,` with `creds=creds,` and `backend=judge_backend,` (two lines).
+  - Replace the `except` body with:
+    ```python
+    except Exception as e:
+        message = scrub.scrub(str(e), raw_creds)
+        logger.error("run failed: %s", message)
+        return _with_session_cookie(_error_response(message, 503), session_id)
+    ```
+
+- [ ] **Step 6: Migrate `mcp_server.py`**
+
+(a) Imports: remove `import re`; add `import gateway` (after `import catalog`) and `import scrub` (after `import runner`). Delete `_SECRET_RE = …` and the `_scrub` function.
+
+(b) Replace the `evaluate_prompt` tool with:
+
+```python
+@mcp.tool()
+def evaluate_prompt(prompt: str, api_key: str = "", creds: dict | None = None,
+                    judge_backend: str = "openrouter") -> dict:
+    """Get pre-run feedback on a prompt's clarity/specificity before running a comparison.
+
+    An explicit, separately-triggered LLM call (uses your credentials) — not run
+    automatically as part of run_comparison. Rate-limited independently from
+    run_comparison's 3-per-8h budget. Pass `creds` as {"openrouter"?: str,
+    "bedrock"?: {...}, "vertex"?: {...}} to use Amazon Bedrock or Google Vertex AI;
+    a bare `api_key` is treated as an OpenRouter key. `judge_backend` picks which
+    backend runs the evaluation.
+    """
+    raw_creds = gateway.normalize_creds(creds, api_key)
+    if raw_creds is None:
+        return {"error": "Missing required field: creds (or api_key)."}
+    if judge_backend not in gateway.BACKENDS:
+        return {"error": "Invalid judge_backend."}
+    limit_result = limiter.check_and_record(_EVALUATE_RATE_LIMIT_KEY, time.time())
+    if not limit_result["allowed"]:
+        return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
+    return judge.evaluate_prompt(prompt, creds=gateway.prepare_creds(raw_creds), backend=judge_backend)
+```
+
+(c) In `run_comparison`: change the signature to
+`def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "", creds: dict | None = None, judge_backend: str = "openrouter") -> dict:`
+Append to its docstring: `Models are "<catalog id>" (OpenRouter) or "<catalog id>@bedrock" / "<catalog id>@vertex"; pass matching creds ({"openrouter"?, "bedrock"?, "vertex"?}) or a bare OpenRouter api_key. judge_backend picks which backend runs the judge and policy gate.`
+Replace the `if not api_key:` guard with:
+
+```python
+    raw_creds = gateway.normalize_creds(creds, api_key)
+    if raw_creds is None:
+        return {"error": "Missing required field: creds (or api_key)."}
+    if judge_backend not in gateway.BACKENDS:
+        return {"error": "Invalid judge_backend."}
+    if _policy_text and not raw_creds.get(judge_backend):
+        label = gateway.BACKEND_LABELS[judge_backend]
+        return {"error": f"A policy is set, so {label} credentials are required for the judge backend."}
+```
+
+Inside the `try:`, replace the `runner.run(...)` line with:
+```python
+        prepared = gateway.prepare_creds(raw_creds)
+        results = runner.run(test_cases, models, creds=prepared, policy_text=_policy_text, judge_backend=judge_backend)
+```
+In `judge.overall_verdict(...)`, replace `api_key=api_key,` with `creds=prepared,` and `backend=judge_backend,`. Replace `return {"error": _scrub(str(e))}` with `return {"error": scrub.scrub(str(e), raw_creds)}`.
+
+- [ ] **Step 7: Update and extend the app and MCP tests**
+
+In `tests/test_app.py`:
+- Change `mock_evaluate.assert_called_once_with("Tell me stuff", api_key="sk-or-v1-test")` to
+  `mock_evaluate.assert_called_once_with("Tell me stuff", creds={"openrouter": "sk-or-v1-test"}, backend="openrouter")`.
+- Append:
 
 ```python
 
@@ -2040,7 +2347,7 @@ def test_api_run_accepts_creds_and_judge_backend(mock_verdict, mock_run):
 
     assert resp.status_code == 200
     _, run_kwargs = mock_run.call_args
-    assert run_kwargs["creds"] == {"bedrock": {"region": "us-east-1", "api_key": "ABSKexampleexampleexample1234"}}
+    assert run_kwargs["creds"] == creds
     assert run_kwargs["judge_backend"] == "bedrock"
     _, verdict_kwargs = mock_verdict.call_args
     assert verdict_kwargs["backend"] == "bedrock"
@@ -2105,153 +2412,135 @@ def test_api_run_error_response_scrubs_aws_secret_by_exact_value(caplog):
     assert resp.status_code == 503
     assert secret not in resp.get_json()["error"]
     assert secret not in caplog.text
+
+
+@patch("app.judge.evaluate_prompt")
+def test_api_evaluate_prompt_accepts_creds_and_judge_backend(mock_evaluate):
+    mock_evaluate.return_value = {"score": 4, "feedback": "ok"}
+    creds = {"vertex": {"project": "my-project-123", "region": "us-central1", "access_token": "ya29.x"}}
+
+    resp = _client().post("/api/evaluate-prompt", json={"prompt": "hi", "creds": creds, "judge_backend": "vertex"})
+
+    assert resp.status_code == 200
+    mock_evaluate.assert_called_once_with("hi", creds=creds, backend="vertex")
+
+
+def test_api_evaluate_prompt_invalid_judge_backend_returns_400():
+    resp = _client().post("/api/evaluate-prompt", json={
+        "prompt": "hi", "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "azure",
+    })
+    assert resp.status_code == 400
 ```
 
-- [ ] **Step 4: Replace `_SECRET_RE` / `_scrub` and the run endpoint in the finish plan's Task 2 Step 3 (`app.py`)**
+(If `tests/test_app.py` doesn't already import `io` and `limiter`, add those imports at the top.)
 
-In the `app.py` code block of Task 2 Step 3:
-
-(a) In the imports, replace `import catalog` with:
-
-```python
-import catalog
-import gateway
-```
-
-and replace `import runner` with:
+In `tests/test_mcp_server.py`:
+- Change `mock_evaluate.assert_called_once_with("Tell me stuff", api_key="sk-or-v1-test")` to
+  `mock_evaluate.assert_called_once_with("Tell me stuff", creds={"openrouter": "sk-or-v1-test"}, backend="openrouter")`.
+- Append:
 
 ```python
-import runner
-import scrub
-```
-
-(b) Delete these lines entirely:
-
-```python
-_SECRET_RE = re.compile(r"\b(sk|pk)-[A-Za-z0-9_-]{8,}\b")
-```
-
-```python
-def _scrub(message):
-    return _SECRET_RE.sub("[REDACTED]", message)
-```
-
-(If `re` is then unused in `app.py`, also delete `import re`.)
-
-(c) Replace the whole `_validate_run_body` function **and** the whole `api_run` function with:
-
-```python
-def _raw_creds(body):
-    if "creds" in body:
-        return body["creds"]
-    if isinstance(body.get("api_key"), str) and body["api_key"]:
-        return {"openrouter": body["api_key"]}
-    return None
 
 
-def _validate_run_body(body):
-    if not isinstance(body, dict):
-        return "Request body must be JSON."
-    raw_creds = _raw_creds(body)
-    if not isinstance(raw_creds, dict) or not raw_creds:
-        return "Missing required field: creds (or api_key)."
-    if body.get("judge_backend", "openrouter") not in gateway.BACKENDS:
-        return "Invalid judge_backend."
-    if not isinstance(body.get("test_cases"), list):
-        return "Missing required field: test_cases."
-    if not isinstance(body.get("models"), list) or not all(isinstance(m, str) for m in body["models"]):
-        return "Missing required field: models."
-    return None
+@patch("mcp_server.runner.run")
+@patch("mcp_server.judge.overall_verdict")
+def test_run_comparison_accepts_creds_and_judge_backend(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexampleexampleexample1234"}}
+
+    result = mcp_server.run_comparison(
+        test_cases=[{"prompt": "q1"}], models=["anthropic/claude-sonnet-4.5@bedrock"],
+        creds=creds, judge_backend="bedrock",
+    )
+
+    assert "error" not in result
+    _, run_kwargs = mock_run.call_args
+    assert run_kwargs["creds"] == creds
+    assert run_kwargs["judge_backend"] == "bedrock"
+    assert mock_verdict.call_args[1]["backend"] == "bedrock"
 
 
-@app.route("/api/run", methods=["POST"])
-def api_run():
-    session_id = _get_session_id()
-    body = request.get_json(silent=True)
+def test_run_comparison_invalid_judge_backend_returns_error():
+    result = mcp_server.run_comparison(test_cases=[], models=[], creds={"openrouter": "sk-or-v1-test"},
+                                       judge_backend="azure")
+    assert result["error"] == "Invalid judge_backend."
 
-    error = _validate_run_body(body)
-    if error:
-        return _with_session_cookie(_error_response(error, 400), session_id)
 
-    raw_creds = _raw_creds(body)
-    judge_backend = body.get("judge_backend", "openrouter")
-    test_cases = body["test_cases"]
-    model_ids = body["models"]
+def test_run_comparison_policy_without_judge_creds_returns_error():
+    mcp_server.set_policy("No medical advice.")
+    result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"],
+                                       api_key="sk-or-v1-test", judge_backend="vertex")
+    assert "Vertex AI" in result["error"]
 
-    with _store_lock:
-        policy_text = _policy_store.get(session_id)
 
-    if policy_text and not raw_creds.get(judge_backend):
-        label = gateway.BACKEND_LABELS[judge_backend]
-        message = f"A policy is loaded, so {label} credentials are required for the judge backend."
-        return _with_session_cookie(_error_response(message, 400), session_id)
-
-    limit_result = limiter.check_and_record(session_id, time.time())
-    if not limit_result["allowed"]:
-        resp = jsonify({"error": "rate_limited", "reset_at": limit_result["reset_at"]})
-        resp.status_code = 429
-        return _with_session_cookie(resp, session_id)
-
-    try:
-        creds = gateway.prepare_creds(raw_creds)
-        results = runner.run(
-            test_cases, model_ids, creds=creds, policy_text=policy_text, judge_backend=judge_backend
+def test_run_comparison_error_scrubs_secret_by_exact_value():
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    with patch("mcp_server.runner.run", side_effect=Exception(f"signature mismatch for {secret}")):
+        result = mcp_server.run_comparison(
+            test_cases=[{"prompt": "q1"}], models=["anthropic/claude-sonnet-4.5@bedrock"],
+            creds={"bedrock": {"region": "us-east-1", "access_key_id": "AKIAABCDEFGHIJKLMNOP",
+                               "secret_access_key": secret}},
         )
+    assert secret not in result["error"]
 
-        agg_stats = _aggregate_stats(results, model_ids)
-        grades = {
-            model_id: grading.grade_model(
-                s["judge_scores"], s["rule_check_results"], s["judge_rationales"]
-            )
-            for model_id, s in agg_stats.items()
-        }
-        stats = _cost_latency_stats(agg_stats)
 
-        verdict = {"winner": None, "rationale": "No models were run."}
-        if model_ids:
-            verdict = judge.overall_verdict(
-                {m: {"score": grades[m]["score"], "letter": grades[m]["letter"]} for m in model_ids},
-                creds=creds,
-                backend=judge_backend,
-            )
-    except Exception as e:
-        message = scrub.scrub(str(e), raw_creds)
-        logger.error("run failed: %s", message)
-        return _with_session_cookie(_error_response(message, 503), session_id)
+@patch("mcp_server.judge.evaluate_prompt")
+def test_evaluate_prompt_tool_accepts_creds(mock_evaluate):
+    mock_evaluate.return_value = {"score": 3, "feedback": "ok"}
+    creds = {"vertex": {"project": "my-project-123", "region": "us-central1", "access_token": "ya29.x"}}
 
-    run_result = {
-        "run_id": str(uuid.uuid4()),
-        "created_at": time.time(),
-        "results": results,
-        "grades": grades,
-        "stats": stats,
-        "verdict": verdict,
-    }
+    mcp_server.evaluate_prompt("hi", creds=creds, judge_backend="vertex")
 
-    with _store_lock:
-        history = _run_history_store.setdefault(session_id, deque(maxlen=5))
-        history.append(run_result)
+    mock_evaluate.assert_called_once_with("hi", creds=creds, backend="vertex")
 
-    return _with_session_cookie(jsonify(run_result), session_id)
+
+def test_evaluate_prompt_tool_without_creds_returns_error():
+    result = mcp_server.evaluate_prompt("hi")
+    assert "creds" in result["error"]
 ```
 
-(d) The existing test `test_api_run_missing_api_key_returns_400` still passes unchanged (the new message contains `"api_key"`), as does `test_api_run_error_response_scrubs_api_key` (the `sk-or-v1-…` regex still applies).
+- [ ] **Step 8: Verify**
 
-- [ ] **Step 5: Update the finish plan's Task 3 `index.html`**
+```bash
+W=.superpowers/sdd/2026-09-25-bedrock-vertex-backends
+$W/venv312/bin/pytest tests/ -q
+grep -n "api_key=" app.py mcp_server.py judge.py runner.py policy.py
+grep -n "_SECRET_RE\|_scrub(\|import openrouter" app.py mcp_server.py judge.py runner.py policy.py
+```
+Expected: the full suite passes, **including** `tests/test_mcp_server_e2e.py`, which spawns the real MCP server over stdio. That's a local subprocess, not the network, and it uses the legacy `api_key` path. Both greps print nothing. If the e2e test tries a live OpenRouter call and fails for network reasons, report DONE_WITH_CONCERNS with the output. Don't skip or edit that test.
 
-(a) Replace the tagline line:
+- [ ] **Step 9: Commit the merge**
 
-```html
-    <p class="tagline">Compare text LLMs across providers with your own OpenRouter key.</p>
+```bash
+git add -A -- app.py mcp_server.py gateway.py judge.py catalog.py runner.py requirements.txt data/providers.json tests/
+git status --short   # every merge path must be resolved/staged; .gitignore, CLAUDE.md, .claude/ must stay unstaged/untracked
+git commit -m "Merge branch 'worktree-finish-evalforge-lite' into feat/bedrock-vertex-backends" \
+  -m "Brings in app.py, report.py, mcp_server.py, frontend, and evaluate_prompt from the executed finish plan, and moves every server-side call site onto per-backend creds (gateway.normalize_creds/prepare_creds), judge_backend, and scrub.scrub. Legacy api_key bodies still work." \
+  -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-with:
+Don't pass a pathspec to this `git commit`: a merge commit has to include the whole resolved merge. Before committing, confirm that `git diff --cached --name-only` lists no file outside the merge and the files named in this task.
 
-```html
-    <p class="tagline">Compare text LLMs via OpenRouter, Amazon Bedrock, or Google Vertex AI with your own credentials.</p>
-```
+---
 
-(b) Replace the entire `<section id="api-key-section" class="card">…</section>` with:
+### Task 8: Bedrock/Vertex credentials UI in the real frontend, plus CLAUDE.md
+
+**Files:**
+- Modify: `templates/index.html`, `static/style.css`, `static/app.js`
+- Modify: `CLAUDE.md` (untracked — edit, don't commit)
+
+**Interfaces:**
+- Consumes: `POST /api/run` and `POST /api/evaluate-prompt` accepting `creds` + `judge_backend` (Task 7); `/api/catalog` returning each model's optional `routes` map (Task 3).
+- Produces: browser UI only. `state.selectedModels` holds **target strings** (`"<id>"` for OpenRouter, `"<id>@bedrock"` / `"<id>@vertex"`).
+
+- [ ] **Step 1: `templates/index.html`**
+
+(a) Tagline → `<p class="tagline">Compare text LLMs via OpenRouter, Amazon Bedrock, or Google Vertex AI with your own credentials.</p>`
+
+(b) In the mobile nav, `<a href="#api-key-section">API Key</a>` → `<a href="#creds-section">Credentials</a>`.
+
+(c) Replace the whole `<section id="api-key-section" class="card">…</section>` with:
 
 ```html
   <section id="creds-section" class="card">
@@ -2264,6 +2553,9 @@ with:
     <div class="cred-panel" data-backend="openrouter">
       <label for="api-key">OpenRouter API key</label>
       <input type="password" id="api-key" placeholder="sk-or-v1-..." autocomplete="off">
+      <p class="provider-blurb">
+        Don't have a key? <a href="https://openrouter.ai/workspaces/default/keys" target="_blank" rel="noopener">Get one at OpenRouter &rarr;</a>
+      </p>
     </div>
 
     <div class="cred-panel" data-backend="bedrock" hidden>
@@ -2287,7 +2579,7 @@ with:
       <label for="vertex-project">GCP project ID</label>
       <input type="text" id="vertex-project" placeholder="my-project-123">
       <label for="vertex-region">Region</label>
-      <input type="text" id="vertex-region" placeholder="us-central1 (use global for Gemini 3 preview)">
+      <input type="text" id="vertex-region" placeholder="us-central1 (or global)">
       <div class="auth-toggle">
         <label><input type="radio" name="vertex-auth" value="access_token" checked> Access token</label>
         <label><input type="radio" name="vertex-auth" value="service_account"> Service-account JSON</label>
@@ -2310,17 +2602,15 @@ with:
   </section>
 ```
 
-- [ ] **Step 6: Update the finish plan's Task 3 `style.css`**
-
-Append to the end of the `static/style.css` code block:
+- [ ] **Step 2: `static/style.css`** — append (theme-aware via the existing `--surface`/`--fg`/`--bg`/`--muted`/`--border` tokens, so dark mode works):
 
 ```css
 
-.tab-row { display: flex; gap: 6px; margin-bottom: 12px; }
+.tab-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .tab {
   font-family: inherit;
   font-size: 12px;
-  background: #fff;
+  background: var(--surface);
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -2329,15 +2619,16 @@ Append to the end of the `static/style.css` code block:
 }
 .tab.active { color: var(--fg); border-color: var(--fg); }
 .cred-panel input[type="text"], .cred-panel input[type="password"] { display: block; width: 100%; margin-bottom: 8px; }
-.auth-toggle { display: flex; gap: 16px; margin: 4px 0 8px; font-size: 12px; }
+.auth-toggle { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 8px; font-size: 12px; }
 .auth-toggle label { display: inline-flex; gap: 4px; align-items: center; margin: 0; }
-select {
+#judge-backend {
   font-family: inherit;
   font-size: 13px;
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface);
+  color: var(--fg);
 }
 .model-option { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .backend-chips { display: flex; gap: 4px; }
@@ -2350,18 +2641,15 @@ select {
   cursor: pointer;
   user-select: none;
 }
-.backend-chip.selected { background: var(--fg); border-color: var(--fg); color: #fff; }
+.backend-chip.selected { background: var(--fg); border-color: var(--fg); color: var(--bg); }
 ```
 
-- [ ] **Step 7: Update the finish plan's Task 3 `app.js`**
+- [ ] **Step 3: `static/app.js`**
 
-(a) In `const state = { … }`, add a property after `selectedModels: new Set(),`:
-
+(a) In `const state = { … }`, add after `selectedModels: new Set(),`:
 ```javascript
   vertexServiceAccount: null,   // service-account JSON text; lives only in this tab's memory
 ```
-
-`state.selectedModels` now holds **target strings** (`"<id>"` for OpenRouter, `"<id>@bedrock"` / `"<id>@vertex"` otherwise); no code change is needed for that beyond the functions below.
 
 (b) Replace the whole `function apiKey() { … }` with:
 
@@ -2374,6 +2662,10 @@ function fieldValue(id) {
 
 function checkedValue(name) {
   return document.querySelector(`input[name="${name}"]:checked`).value;
+}
+
+function judgeBackend() {
+  return document.getElementById("judge-backend").value;
 }
 
 function buildCreds() {
@@ -2416,7 +2708,7 @@ function targetBackend(target) {
 
 function missingBackends(creds) {
   const needed = new Set(Array.from(state.selectedModels).map(targetBackend));
-  needed.add(document.getElementById("judge-backend").value);
+  needed.add(judgeBackend());
   return Array.from(needed).filter((backend) => !creds[backend]);
 }
 
@@ -2447,37 +2739,35 @@ function setupCredsPanel() {
 }
 ```
 
-(c) Replace the whole `function modelBadge(model, color) { … }` with:
+(c) Replace the whole `function modelBadge(model, color) { … }` with the version below. The badge keeps its existing `--accent` / `.selected` behavior, and models with `routes` gain per-backend chips. `toggleModel` stays unchanged.
 
 ```javascript
 function modelBadge(model, color) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "model-option";
-
   const el = document.createElement("div");
   el.className = "model-badge";
   el.textContent = model.name;
-  el.style.borderColor = color;
-  el.style.color = color;
+  el.style.setProperty("--accent", color);
   el.dataset.modelId = model.id;
   el.title = "Run via OpenRouter";
-  el.addEventListener("click", () => toggleModel(model.id, el, color));
-  wrapper.appendChild(el);
+  el.addEventListener("click", () => toggleModel(model.id, el));
 
   const backends = Object.keys(model.routes || {});
-  if (backends.length) {
-    const chips = document.createElement("div");
-    chips.className = "backend-chips";
-    backends.forEach((backend) => {
-      const chip = document.createElement("span");
-      chip.className = "backend-chip";
-      chip.textContent = backend === "bedrock" ? "Bedrock" : "Vertex";
-      chip.title = `Also run via ${BACKEND_LABELS[backend]}`;
-      chip.addEventListener("click", () => toggleBackendTarget(`${model.id}@${backend}`, chip));
-      chips.appendChild(chip);
-    });
-    wrapper.appendChild(chips);
-  }
+  if (!backends.length) return el;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "model-option";
+  wrapper.appendChild(el);
+  const chips = document.createElement("div");
+  chips.className = "backend-chips";
+  backends.forEach((backend) => {
+    const chip = document.createElement("span");
+    chip.className = "backend-chip";
+    chip.textContent = backend === "bedrock" ? "Bedrock" : "Vertex";
+    chip.title = `Also run via ${BACKEND_LABELS[backend]}`;
+    chip.addEventListener("click", () => toggleBackendTarget(`${model.id}@${backend}`, chip));
+    chips.appendChild(chip);
+  });
+  wrapper.appendChild(chips);
   return wrapper;
 }
 
@@ -2492,7 +2782,18 @@ function toggleBackendTarget(target, chip) {
 }
 ```
 
-(d) In `runComparison`, replace the opening validation and the `fetch` body. The function's start, through the closing `});` of the `fetch` call, becomes:
+(d) In `evaluatePrompt(idx)`, replace the `if (!apiKey()) { … }` block with:
+
+```javascript
+  const creds = buildCreds();
+  if (!creds[judgeBackend()]) {
+    feedbackEl.textContent = `Add ${BACKEND_LABELS[judgeBackend()]} credentials first (the judge runs there).`;
+    return;
+  }
+```
+and change its request body to `body: JSON.stringify({ prompt, creds, judge_backend: judgeBackend() }),`.
+
+(e) In `runComparison`, replace the `if (!apiKey()) { … }` block and move the models check first, so the function starts:
 
 ```javascript
 async function runComparison() {
@@ -2507,144 +2808,82 @@ async function runComparison() {
     runStatus.textContent = `Add ${missing.map((b) => BACKEND_LABELS[b]).join(" and ")} credentials first.`;
     return;
   }
-
-  runStatus.textContent = "Running...";
-  const resp = await fetch("/api/run", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+```
+and change the request body to:
+```javascript
     body: JSON.stringify({
       test_cases: state.testCases,
       models: Array.from(state.selectedModels),
       creds,
-      judge_backend: document.getElementById("judge-backend").value,
+      judge_backend: judgeBackend(),
     }),
-  });
 ```
 
-The rest of `runComparison` (429 / error / success handling) is unchanged.
+(f) Near the other top-level `addEventListener` calls at the bottom of the file, add `setupCredsPanel();`. It has to run before the first model render, so put it before the call that loads the catalog.
 
-(e) In the init block at the bottom of `app.js`, replace:
+- [ ] **Step 4: Verify**
 
-```javascript
-loadCatalog();
-addTestCase();
+```bash
+W=.superpowers/sdd/2026-09-25-bedrock-vertex-backends
+node --check static/app.js
+grep -n "apiKey()\|api_key:" static/app.js
+grep -n "api-key-section" templates/index.html static/style.css static/app.js
+$W/venv312/bin/pytest tests/ -q
+```
+Expected: `node --check` prints nothing (valid syntax); both greps print nothing; the full suite passes (no Python changed, so this is a regression guard). Then render the page through Flask's test client to be sure the template still renders:
+
+```bash
+$W/venv312/bin/python -c "import app; c = app.app.test_client(); r = c.get('/'); assert r.status_code == 200 and b'creds-section' in r.data and b'judge-backend' in r.data; print('index renders')"
 ```
 
-with:
+- [ ] **Step 5: Commit**
 
-```javascript
-setupCredsPanel();
-loadCatalog();
-addTestCase();
+```bash
+git add templates/index.html static/style.css static/app.js && git commit -m "feat: add Bedrock/Vertex credentials panel, backend chips, and judge-backend picker to the UI" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- templates/index.html static/style.css static/app.js
 ```
 
-- [ ] **Step 8: Update the finish plan's Task 3 manual-verification step**
-
-Append to the paragraph in Task 3 Step 4 (the one beginning "Open `http://localhost:5060` and confirm"):
-
-```
-Then confirm the credentials card: the three tabs switch panels; the Bedrock and Vertex auth radios swap their fields; Claude, Gemini, and Llama badges show small Bedrock/Vertex chips that toggle independently of the badge; selecting a Bedrock chip without Bedrock credentials shows "Add Amazon Bedrock credentials first."; the leaderboard labels a Bedrock run as `anthropic/claude-sonnet-4.5@bedrock`; and choosing a judge backend without credentials for it is blocked client-side.
-```
-
-- [ ] **Step 9: Append an amendment section to the finish spec**
-
-Append to `docs/superpowers/specs/2026-08-29-evalforge-lite-finish/design.md`:
-
-```markdown
-
-## Amendment (2026-09-25): Bedrock & Vertex AI backends
-
-The backend now supports Amazon Bedrock and Google Vertex AI alongside OpenRouter — see
-`docs/superpowers/specs/2026-09-25-bedrock-vertex-backends-design.md`. Consequences for this spec:
-
-- `/api/run` takes `creds` (`{"openrouter"?, "bedrock"?, "vertex"?}`) and optional `judge_backend`
-  (default `"openrouter"`); legacy `api_key` is still accepted as `creds.openrouter`.
-- `models` entries are target strings: `"<model id>"` (OpenRouter) or `"<model id>@bedrock|vertex"`.
-- If a policy is loaded and the judge backend has no creds, `/api/run` returns 400 before the
-  rate limiter is charged.
-- Error responses and log lines use `scrub.scrub(message, raw_creds)` instead of the single
-  `sk-/pk-` regex; `logger.exception` is not used on the run path.
-- The frontend's API-key card becomes a three-tab credentials card with a judge-backend select,
-  and models with Bedrock/Vertex routes show per-backend chips.
-```
-
-- [ ] **Step 10: Update CLAUDE.md**
+- [ ] **Step 6: Update CLAUDE.md (untracked, not committed)**
 
 In `CLAUDE.md`:
-
 (a) Replace the paragraph beginning "Backend modules (`config.py`, `openrouter.py`, …" with:
-
 ```markdown
-Backend modules (`config.py`, `errors.py`, `openrouter.py`, `bedrock.py`, `vertex.py`,
-`gateway.py`, `scrub.py`, `catalog.py`, `checks.py`, `judge.py`, `grading.py`, `policy.py`,
-`limiter.py`, `runner.py`) are complete. Still to build per the finish plan
-(`docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md`, amended 2026-09-25 for
-Bedrock/Vertex): `report.py` (PDF export), `app.py` (Flask routes), and the frontend
-(`templates/index.html`, `static/style.css`, `static/app.js`).
+All modules are built: backend (`config.py`, `errors.py`, `openrouter.py`, `bedrock.py`,
+`vertex.py`, `gateway.py`, `scrub.py`, `catalog.py`, `checks.py`, `judge.py`, `grading.py`,
+`policy.py`, `limiter.py`, `runner.py`, `report.py`), the Flask app (`app.py`), the MCP server
+(`mcp_server.py`), and the frontend (`templates/index.html`, `static/style.css`, `static/app.js`).
+Requires Python ≥ 3.10 (3.12 per `.python-version`) because of `mcp[cli]`.
 ```
-
 (b) Replace the line "Every test mocks `openrouter.call_model` (or `requests.post`) — there must be no live network calls anywhere in the test suite." with:
-
 ```markdown
 Every test mocks the network (`requests.post`, `gateway.call_backend`/`call_target`, or
 google-auth's token refresh) — there must be no live network calls anywhere in the test suite.
 ```
-
-(c) In `## Architecture`, add these bullets directly after the `openrouter.py` bullet:
-
+(c) In `## Architecture`, add after the `openrouter.py` bullet:
 ```markdown
 - **`gateway.py`** — backend dispatch. A model *target* is `"<catalog id>"` (OpenRouter) or
   `"<catalog id>@bedrock|vertex"`; `call_target()` resolves it to a native id + price via the
-  model's `routes` in `providers.json`, `call_backend()` calls a native id directly (used by the
-  judge/policy with `config.JUDGE_MODELS[backend]`). `prepare_creds()` validates the per-request
-  `creds` dict once per run (region/project regexes guard against SSRF) and mints Vertex tokens
-  from service-account JSON; it is idempotent on its own output.
+  model's `routes` in `providers.json`; `call_backend()` calls a native id directly (judge/policy
+  use `config.JUDGE_MODELS[backend]`) and always runs `prepare_creds()` first, which validates the
+  per-request `creds` dict (region/project regexes guard against SSRF) and mints Vertex tokens
+  from service-account JSON. `normalize_creds()` accepts `creds` or a legacy bare `api_key`.
 - **`bedrock.py`** — Bedrock Converse API; Bedrock API key (bearer) or AWS access keys (SigV4 via
-  botocore). A literal `{geo}` in a model id becomes the cross-region inference-profile prefix
-  derived from the region.
+  botocore). A literal `{geo}` in a model id becomes the cross-region inference-profile prefix.
 - **`vertex.py`** — Vertex AI OpenAI-compatible endpoint; access token, or service-account JSON
   exchanged via google-auth with `token_uri` forced to Google's.
-- **`scrub.py`** — redacts credentials from any text sent to the client or logs: exact values
-  from the request's `creds` plus regexes for `sk-/pk-`, AWS key ids, Bedrock keys, `ya29.`
-  tokens, and PEM private keys.
+- **`scrub.py`** — redacts credentials from any text sent to clients or logs: exact values from the
+  request's `creds` plus regexes for `sk-/pk-`, AWS key ids, Bedrock keys, `ya29.`, PEM keys.
 ```
-
-(d) Replace the first two bullets under `## Conventions carried through the codebase` with:
-
+(d) Under `## Conventions carried through the codebase`, replace the first two bullets with:
 ```markdown
 - No server-side model credentials ever, anywhere — every function that can reach a model takes
-  `creds` (or its backend's slice) as an explicit parameter.
+  `creds` (or its backend's slice) as an explicit parameter; `/api/run`, `/api/evaluate-prompt`,
+  and the MCP tools accept `creds` + `judge_backend` (legacy `api_key` = `creds.openrouter`).
 - Security-sensitive modules (`policy.py`, `judge.py`) fail closed: catch `gateway.GatewayError`
   plus JSON/parse exceptions and return a safe default rather than propagating.
 ```
-
 and replace the bullet beginning "When the future `app.py` returns errors to the client…" with:
-
 ```markdown
-- When `app.py` returns errors to the client or logs them, pass the text through
+- `app.py` and `mcp_server.py` pass any error text sent to clients or logs through
   `scrub.scrub(message, raw_creds)`.
 ```
-
-- [ ] **Step 11: Verify the amendments landed**
-
-Run:
-```bash
-grep -c "api_key" docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md
-grep -n "_SECRET_RE\|def _scrub\|function apiKey\|api-key-section" docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md
-grep -n "gateway.prepare_creds\|scrub.scrub\|setupCredsPanel\|judge_backend" docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md | head
-```
-Expected: the second command prints nothing; the third prints matches in Global Constraints, Task 2, and Task 3. Remaining `api_key` hits are only the legacy-compat tests/validation and the `id="api-key"` input.
-
-- [ ] **Step 12: Run the full suite (docs-only task — nothing should move)**
-
-Run: `pytest tests/ -v`
-Expected: all PASS.
-
-- [ ] **Step 13: Commit**
-
-```bash
-git add docs/superpowers/plans/2026-08-29-evalforge-lite-finish.md docs/superpowers/specs/2026-08-29-evalforge-lite-finish/design.md
-git commit -m "docs: amend finish plan and spec for Bedrock/Vertex backends"
-```
-
-(`CLAUDE.md` is untracked; leave it out of the commit unless the user has started tracking it.)
+(e) Update the `## Commands` block's venv line to note Python 3.12: `python3.12 -m venv venv && source venv/bin/activate`.
