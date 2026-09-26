@@ -152,6 +152,19 @@ def test_prepare_creds_rejects_openrouter_key_with_whitespace_or_control_chars(b
     assert prepared["openrouter"] == {"error": "OpenRouter credentials contain whitespace or control characters."}
 
 
+def test_prepare_creds_keeps_openrouter_error_when_reprepared():
+    once = gateway.prepare_creds({"openrouter": "sk-or-v1-test\n"})
+    assert gateway.prepare_creds(once) == once
+
+
+@patch("gateway.openrouter.call_model", return_value=FAKE_RESULT)
+def test_call_backend_surfaces_dirty_openrouter_key_error_after_runner_prepare(mock_call):
+    prepared = gateway.prepare_creds({"openrouter": "sk-or-v1-test\n"})
+    with pytest.raises(GatewayError, match="OpenRouter credentials contain whitespace or control characters."):
+        gateway.call_backend("openrouter", "openai/gpt-5", MESSAGES, prepared)
+    mock_call.assert_not_called()
+
+
 @patch("gateway.openrouter.call_model", return_value=FAKE_RESULT)
 def test_call_backend_openrouter_passes_key(mock_call):
     gateway.call_backend("openrouter", "openai/gpt-5", MESSAGES, {"openrouter": "sk-or-v1-test"})

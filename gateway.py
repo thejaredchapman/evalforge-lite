@@ -97,7 +97,9 @@ def prepare_creds(creds):
     """Validate creds once per run and mint any tokens. Idempotent on its own output."""
     creds = creds if isinstance(creds, dict) else {}
     prepared = {}
-    if _nonempty_str(creds.get("openrouter")):
+    if isinstance(creds.get("openrouter"), dict) and "error" in creds["openrouter"]:
+        prepared["openrouter"] = creds["openrouter"]
+    elif _nonempty_str(creds.get("openrouter")):
         if _clean_secret(creds["openrouter"]):
             prepared["openrouter"] = creds["openrouter"]
         else:
