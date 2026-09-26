@@ -98,7 +98,7 @@ catalog `id` *is* the OpenRouter id and OpenRouter returns cost itself).
 ```json
 {"id": "anthropic/claude-sonnet-4.5", "name": "Claude Sonnet 4.5", "family": "claude-sonnet",
  "routes": {
-   "bedrock": {"id": "anthropic.claude-sonnet-4-5-20250929-v1:0", "inference_profile": true,
+   "bedrock": {"id": "{geo}.anthropic.claude-sonnet-4-5-20250929-v1:0",
                "price": {"input_per_m": 3.0, "output_per_m": 15.0}}
  }}
 {"id": "google/gemini-2.5-flash", ...,
@@ -106,14 +106,18 @@ catalog `id` *is* the OpenRouter id and OpenRouter returns cost itself).
                        "price": {"input_per_m": 0.30, "output_per_m": 2.50}}}}
 ```
 
-- `inference_profile: true` → the Bedrock id gets a geography prefix derived from the region
-  at call time: `us-*`→`us.`, `eu-*`→`eu.`, `ap-*`→`apac.` (hard-coding `us.` would break EU
-  users). Unknown geography → `GatewayError`.
+- A literal `{geo}` in a Bedrock id is replaced at call time with the cross-region
+  inference-profile geography derived from the region: `us-gov-*`→`us-gov`, `us-*`→`us`,
+  `eu-*`→`eu`, `ap-*`→`apac` (hard-coding `us.` would break EU users). Unknown geography →
+  `GatewayError`. The same template works for `config.JUDGE_MODELS["bedrock"]`, so there is
+  one mechanism for catalog routes and judge ids alike.
 - Price is per route (backend pricing differs). Cost = `in_tok/1e6*input + out_tok/1e6*output`;
   requires input/output token split, so clients return `input_tokens`/`output_tokens`
   internally. No price entry → `0.0`.
-- `catalog.py` adds `route_for(model_id, backend) -> dict | None` and `catalog_models()` output
-  includes `backends: ["openrouter", ...]` per model for the frontend.
+- `catalog.py` adds `route_for(catalog_dict, model_id, backend) -> dict | None` (same
+  `catalog_dict`-first style as `suggest_family`). No separate `backends` field: `/api/catalog`
+  already returns each model's `routes`, and the frontend derives
+  `["openrouter", ...Object.keys(model.routes || {})]` itself.
 - Target naming a backend the model has no route for → cell error `"<model> is not available on
   Bedrock"`.
 
@@ -130,6 +134,9 @@ creds = {
 }
 ```
 
+- `gateway.prepare_creds` is idempotent on its own output (error entries and already-minted
+  tokens pass through), so `app.py` prepares once and hands the same prepared creds to both
+  `runner.run` and `judge.overall_verdict` without a second token exchange.
 - `runner.run(test_cases, targets, creds, policy_text=None, judge_backend="openrouter")`:
   calls `gateway.prepare_creds(creds)` once, then fans out as today using
   `gateway.call_target`. Results keyed by the **target string**, so the same model on two
@@ -140,7 +147,7 @@ creds = {
   all call `gateway.call_backend(backend, model, ...)` and catch `GatewayError` (which still
   covers `OpenRouterError`).
 - `config.JUDGE_MODELS = {"openrouter": env JUDGE_MODEL or "openai/gpt-4o-mini",
-  "bedrock": env BEDROCK_JUDGE_MODEL or "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "bedrock": env BEDROCK_JUDGE_MODEL or "{geo}.anthropic.claude-haiku-4-5-20251001-v1:0",
   "vertex": env VERTEX_JUDGE_MODEL or "google/gemini-2.5-flash"}`. `config.JUDGE_MODEL` kept as
   an alias for the openrouter entry.
 - Nothing is stored or logged; `creds` lives only for the request.
@@ -157,7 +164,10 @@ creds = {
   (missing/invalid judge-backend creds ⇒ violation). Additionally `app.py` returns `400` up
   front when a policy is set and the chosen judge backend has no creds, so users see a clear
   message instead of every prompt "blocked".
-- **Scrubbing** (app error responses), two layers:
+- **Scrubbing** lives in its own `scrub.py` (`scrub(message, creds=None) -> str`) so it is
+  tested now, before `app.py` exists; `app.py` uses it for error responses **and** log lines
+  (the finish plan's `logger.exception` would otherwise write secrets from exception text to
+  the log). Two layers:
   1. Exact-value replacement of every secret string present in the request's `creds`
      (catches AWS secret keys, which have no reliable regex).
   2. Regex, extended from `\b(sk|pk)-[A-Za-z0-9_-]{8,}\b` to also cover
