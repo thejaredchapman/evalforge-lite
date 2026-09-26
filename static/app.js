@@ -15,6 +15,12 @@ const state = {
 
 const BACKEND_LABELS = { openrouter: "OpenRouter", bedrock: "Amazon Bedrock", vertex: "Google Vertex AI" };
 
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
 function fieldValue(id) {
   return document.getElementById(id).value.trim();
 }
@@ -345,8 +351,8 @@ function renderTestCases() {
     const row = document.createElement("div");
     row.className = "testcase-row";
     row.innerHTML = `
-      <textarea placeholder="Prompt" data-idx="${i}" data-field="prompt">${tc.prompt}</textarea>
-      <input type="text" placeholder="Rubric (optional)" data-idx="${i}" data-field="rubric" value="${tc.rubric}">
+      <textarea placeholder="Prompt" data-idx="${i}" data-field="prompt">${escapeHtml(tc.prompt)}</textarea>
+      <input type="text" placeholder="Rubric (optional)" data-idx="${i}" data-field="rubric" value="${escapeHtml(tc.rubric)}">
       <div class="testcase-eval-row">
         <button type="button" class="secondary evaluate-prompt-btn" data-idx="${i}">Evaluate prompt</button>
         <span class="eval-feedback" data-idx="${i}"></span>
@@ -525,11 +531,11 @@ function renderResults(data) {
     if (modelStats.total_cost_usd !== undefined) metaBits.push(`$${modelStats.total_cost_usd.toFixed(4)}`);
     if (modelStats.avg_latency_ms !== undefined) metaBits.push(`${Math.round(modelStats.avg_latency_ms)}ms avg`);
     row.innerHTML = `
-      <span class="leaderboard-model">${modelId}</span>
-      <span class="grade-badge ${gradeClass}">${grade.letter || "N/A"}</span>
+      <span class="leaderboard-model">${escapeHtml(modelId)}</span>
+      <span class="grade-badge ${gradeClass}">${escapeHtml(grade.letter || "N/A")}</span>
       <span class="leaderboard-meta">${grade.score ?? "N/A"}/100${metaBits.length ? " · " + metaBits.join(" · ") : ""}</span>
       <span class="category-chips">${renderCategoryChips(grade.categories)}</span>
-      <span class="leaderboard-sentence">${grade.sentence}</span>
+      <span class="leaderboard-sentence">${escapeHtml(grade.sentence)}</span>
     `;
     leaderboardEl.appendChild(row);
   });
@@ -544,7 +550,7 @@ function renderResults(data) {
     if (row.best_model && row.best_model.model_id) {
       const recommendationEl = document.createElement("div");
       recommendationEl.className = "best-model-banner";
-      recommendationEl.innerHTML = `<strong>Recommended: ${row.best_model.model_id}</strong> — ${row.best_model.reason}`;
+      recommendationEl.innerHTML = `<strong>Recommended: ${escapeHtml(row.best_model.model_id)}</strong> — ${escapeHtml(row.best_model.reason)}`;
       gridEl.appendChild(recommendationEl);
     }
 
@@ -552,11 +558,11 @@ function renderResults(data) {
       const cellEl = document.createElement("div");
       cellEl.className = "results-cell";
       if (cell.blocked) {
-        cellEl.innerHTML = `<span class="status-blocked">[${modelId}] BLOCKED: ${cell.policy_clause} — ${cell.policy_reason}</span>`;
+        cellEl.innerHTML = `<span class="status-blocked">[${escapeHtml(modelId)}] BLOCKED: ${escapeHtml(cell.policy_clause)} — ${escapeHtml(cell.policy_reason)}</span>`;
       } else if (cell.error) {
-        cellEl.innerHTML = `<span class="status-fail">[${modelId}] ERROR: ${cell.error}</span>`;
+        cellEl.innerHTML = `<span class="status-fail">[${escapeHtml(modelId)}] ERROR: ${escapeHtml(cell.error)}</span>`;
       } else {
-        cellEl.innerHTML = `<strong>${modelId}</strong><p>${cell.response_text}</p>`;
+        cellEl.innerHTML = `<strong>${escapeHtml(modelId)}</strong><p>${escapeHtml(cell.response_text)}</p>`;
       }
       gridEl.appendChild(cellEl);
     });
