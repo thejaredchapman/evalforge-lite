@@ -4,6 +4,7 @@ const state = {
                   // "+N more" expansion under each curated provider section
   testCases: [],
   selectedModels: new Set(),
+  vertexServiceAccount: null,   // service-account JSON text; lives only in this tab's memory
   customModels: [],
   runs: [],       // full /api/run responses seen this page load, oldest first
   activeRunId: null,
@@ -12,8 +13,88 @@ const state = {
                      // can be redrawn with correct colors if the theme changes
 };
 
-function apiKey() {
-  return document.getElementById("api-key").value.trim();
+const BACKEND_LABELS = { openrouter: "OpenRouter", bedrock: "Amazon Bedrock", vertex: "Google Vertex AI" };
+
+function fieldValue(id) {
+  return document.getElementById(id).value.trim();
+}
+
+function checkedValue(name) {
+  return document.querySelector(`input[name="${name}"]:checked`).value;
+}
+
+function judgeBackend() {
+  return document.getElementById("judge-backend").value;
+}
+
+function buildCreds() {
+  const creds = {};
+  const orKey = fieldValue("api-key");
+  if (orKey) creds.openrouter = orKey;
+
+  const bedrockRegion = fieldValue("bedrock-region");
+  if (bedrockRegion) {
+    if (checkedValue("bedrock-auth") === "api_key") {
+      creds.bedrock = { region: bedrockRegion, api_key: fieldValue("bedrock-api-key") };
+    } else {
+      creds.bedrock = {
+        region: bedrockRegion,
+        access_key_id: fieldValue("bedrock-access-key-id"),
+        secret_access_key: fieldValue("bedrock-secret-access-key"),
+      };
+      const sessionToken = fieldValue("bedrock-session-token");
+      if (sessionToken) creds.bedrock.session_token = sessionToken;
+    }
+  }
+
+  const vertexProject = fieldValue("vertex-project");
+  if (vertexProject) {
+    const region = fieldValue("vertex-region") || "us-central1";
+    if (checkedValue("vertex-auth") === "access_token") {
+      creds.vertex = { project: vertexProject, region, access_token: fieldValue("vertex-access-token") };
+    } else {
+      creds.vertex = { project: vertexProject, region, service_account_json: state.vertexServiceAccount || "" };
+    }
+  }
+  return creds;
+}
+
+function targetBackend(target) {
+  const at = target.lastIndexOf("@");
+  const suffix = at === -1 ? "" : target.slice(at + 1);
+  return BACKEND_LABELS[suffix] ? suffix : "openrouter";
+}
+
+function missingBackends(creds) {
+  const needed = new Set(Array.from(state.selectedModels).map(targetBackend));
+  needed.add(judgeBackend());
+  return Array.from(needed).filter((backend) => !creds[backend]);
+}
+
+function setupCredsPanel() {
+  const tabs = document.querySelectorAll("#creds-section .tab");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.toggle("active", t === tab));
+      document.querySelectorAll(".cred-panel").forEach((panel) => {
+        panel.hidden = panel.dataset.backend !== tab.dataset.backend;
+      });
+    });
+  });
+  ["bedrock", "vertex"].forEach((group) => {
+    document.querySelectorAll(`input[name="${group}-auth"]`).forEach((radio) => {
+      radio.addEventListener("change", () => {
+        document.querySelectorAll(`.auth-fields[data-auth-group="${group}"]`).forEach((el) => {
+          el.hidden = el.dataset.auth !== radio.value;
+        });
+      });
+    });
+  });
+  document.getElementById("vertex-sa-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    state.vertexServiceAccount = file ? await file.text() : null;
+    document.getElementById("vertex-sa-status").textContent = file ? "Service account loaded (kept in this tab only)." : "";
+  });
 }
 
 function getStoredTheme() {
@@ -141,8 +222,37 @@ function modelBadge(model, color) {
   el.textContent = model.name;
   el.style.setProperty("--accent", color);
   el.dataset.modelId = model.id;
+  el.title = "Run via OpenRouter";
   el.addEventListener("click", () => toggleModel(model.id, el));
-  return el;
+
+  const backends = Object.keys(model.routes || {});
+  if (!backends.length) return el;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "model-option";
+  wrapper.appendChild(el);
+  const chips = document.createElement("div");
+  chips.className = "backend-chips";
+  backends.forEach((backend) => {
+    const chip = document.createElement("span");
+    chip.className = "backend-chip";
+    chip.textContent = backend === "bedrock" ? "Bedrock" : "Vertex";
+    chip.title = `Also run via ${BACKEND_LABELS[backend]}`;
+    chip.addEventListener("click", () => toggleBackendTarget(`${model.id}@${backend}`, chip));
+    chips.appendChild(chip);
+  });
+  wrapper.appendChild(chips);
+  return wrapper;
+}
+
+function toggleBackendTarget(target, chip) {
+  if (state.selectedModels.has(target)) {
+    state.selectedModels.delete(target);
+    chip.classList.remove("selected");
+  } else {
+    state.selectedModels.add(target);
+    chip.classList.add("selected");
+  }
 }
 
 async function toggleModel(modelId, el) {
@@ -203,8 +313,9 @@ async function evaluatePrompt(idx) {
   const feedbackEl = document.querySelector(`.eval-feedback[data-idx="${idx}"]`);
   const prompt = state.testCases[idx].prompt.trim();
 
-  if (!apiKey()) {
-    feedbackEl.textContent = "Enter your OpenRouter API key first.";
+  const creds = buildCreds();
+  if (!creds[judgeBackend()]) {
+    feedbackEl.textContent = `Add ${BACKEND_LABELS[judgeBackend()]} credentials first (the judge runs there).`;
     return;
   }
   if (!prompt) {
@@ -216,7 +327,7 @@ async function evaluatePrompt(idx) {
   const resp = await fetch("/api/evaluate-prompt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, api_key: apiKey() }),
+    body: JSON.stringify({ prompt, creds, judge_backend: judgeBackend() }),
   });
   const data = await resp.json();
 
@@ -264,12 +375,14 @@ async function uploadPolicy(file) {
 
 async function runComparison() {
   const runStatus = document.getElementById("run-status");
-  if (!apiKey()) {
-    runStatus.textContent = "Enter your OpenRouter API key first.";
-    return;
-  }
   if (state.selectedModels.size === 0) {
     runStatus.textContent = "Pick at least one model.";
+    return;
+  }
+  const creds = buildCreds();
+  const missing = missingBackends(creds);
+  if (missing.length) {
+    runStatus.textContent = `Add ${missing.map((b) => BACKEND_LABELS[b]).join(" and ")} credentials first.`;
     return;
   }
 
@@ -280,7 +393,8 @@ async function runComparison() {
     body: JSON.stringify({
       test_cases: state.testCases,
       models: Array.from(state.selectedModels),
-      api_key: apiKey(),
+      creds,
+      judge_backend: judgeBackend(),
     }),
   });
 
@@ -512,5 +626,6 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
   }
 });
 
+setupCredsPanel();
 loadCatalogAndModels();
 addTestCase();

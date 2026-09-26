@@ -338,3 +338,40 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
 }
 .page-footer a { color: var(--muted); }
 .page-footer a:hover { color: #10A37F; }
+
+.tab-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tab {
+  font-family: inherit;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.tab.active { color: var(--fg); border-color: var(--fg); }
+.cred-panel input[type="text"], .cred-panel input[type="password"] { display: block; width: 100%; margin-bottom: 8px; }
+.auth-toggle { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 8px; font-size: 12px; }
+.auth-toggle label { display: inline-flex; gap: 4px; align-items: center; margin: 0; }
+#judge-backend {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.model-option { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.backend-chips { display: flex; gap: 4px; }
+.backend-chip {
+  font-size: 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.backend-chip.selected { background: var(--fg); border-color: var(--fg); color: var(--bg); }
