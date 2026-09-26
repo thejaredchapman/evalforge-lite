@@ -4,6 +4,7 @@ import checks
 import gateway
 import judge
 import policy
+import scrub
 
 
 def _run_one_cell(test_case, target, creds, policy_text, judge_backend):
@@ -22,7 +23,7 @@ def _run_one_cell(test_case, target, creds, policy_text, judge_backend):
     try:
         response = gateway.call_target(target, [{"role": "user", "content": prompt}], creds)
     except gateway.GatewayError as e:
-        return {"model_id": target, "blocked": False, "error": str(e)}
+        return {"model_id": target, "blocked": False, "error": scrub.scrub(str(e), creds)}
 
     check_results = []
     if test_case.get("checks"):

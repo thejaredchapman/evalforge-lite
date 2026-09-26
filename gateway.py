@@ -28,12 +28,31 @@ def _nonempty_str(value):
     return isinstance(value, str) and bool(value)
 
 
+def _clean_secret(value):
+    if not _nonempty_str(value):
+        return False
+    if value != value.strip():
+        return False
+    return all(ord(c) >= 32 and ord(c) != 127 for c in value)
+
+
+def _check_clean_fields(raw, fields, error_message):
+    for field in fields:
+        value = raw.get(field)
+        if _nonempty_str(value) and not _clean_secret(value):
+            raise GatewayError(error_message)
+
+
 def _prepare_bedrock(raw):
     if not isinstance(raw, dict):
         raise GatewayError("Bedrock credentials must be an object.")
     region = raw.get("region")
     if not _nonempty_str(region) or not _BEDROCK_REGION_RE.match(region):
         raise GatewayError("Bedrock region is missing or invalid.")
+    _check_clean_fields(
+        raw, ("api_key", "access_key_id", "secret_access_key", "session_token"),
+        "Bedrock credentials contain whitespace or control characters.",
+    )
     if _nonempty_str(raw.get("api_key")):
         return {"region": region, "api_key": raw["api_key"]}
     if _nonempty_str(raw.get("access_key_id")) and _nonempty_str(raw.get("secret_access_key")):
@@ -57,6 +76,9 @@ def _prepare_vertex(raw):
         raise GatewayError("Vertex project is missing or invalid.")
     if not _nonempty_str(region) or not _VERTEX_REGION_RE.match(region):
         raise GatewayError("Vertex region is missing or invalid.")
+    _check_clean_fields(
+        raw, ("access_token",), "Vertex credentials contain whitespace or control characters.",
+    )
     if _nonempty_str(raw.get("access_token")):
         return {"project": project, "region": region, "access_token": raw["access_token"]}
     if _nonempty_str(raw.get("service_account_json")):
@@ -76,7 +98,10 @@ def prepare_creds(creds):
     creds = creds if isinstance(creds, dict) else {}
     prepared = {}
     if _nonempty_str(creds.get("openrouter")):
-        prepared["openrouter"] = creds["openrouter"]
+        if _clean_secret(creds["openrouter"]):
+            prepared["openrouter"] = creds["openrouter"]
+        else:
+            prepared["openrouter"] = {"error": "OpenRouter credentials contain whitespace or control characters."}
     for backend, prepare in (("bedrock", _prepare_bedrock), ("vertex", _prepare_vertex)):
         raw = creds.get(backend)
         if raw is None:
@@ -93,6 +118,8 @@ def prepare_creds(creds):
 
 def normalize_creds(creds=None, api_key=None):
     if isinstance(creds, dict) and creds:
+        if "openrouter" not in creds and _nonempty_str(api_key):
+            return {**creds, "openrouter": api_key}
         return creds
     if _nonempty_str(api_key):
         return {"openrouter": api_key}

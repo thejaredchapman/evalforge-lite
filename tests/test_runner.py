@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import gateway
 import openrouter
 import runner
 
@@ -115,6 +116,23 @@ def test_prepares_creds_once_and_threads_prepared_creds(mock_call, mock_prepare)
     mock_prepare.assert_called_once_with({"openrouter": "sk-or-v1-raw"})
     for call in mock_call.call_args_list:
         assert call[0][2] == {"openrouter": "sk-or-v1-prepared"}
+
+
+@patch("runner.gateway.call_target")
+def test_cell_error_is_scrubbed_of_credential_secrets(mock_call):
+    secret = "ABSKexamplesecretvalue1234567890"
+
+    def _side_effect(target, messages, creds, timeout=60):
+        raise gateway.GatewayError(f"bad header 'Bearer {secret}'")
+
+    mock_call.side_effect = _side_effect
+
+    creds = {"bedrock": {"region": "us-east-1", "api_key": secret}}
+    results = runner.run([{"prompt": "q1"}], ["anthropic/claude-sonnet-4.5@bedrock"], creds=creds)
+
+    error = results[0]["cells"]["anthropic/claude-sonnet-4.5@bedrock"]["error"]
+    assert secret not in error
+    assert "[REDACTED]" in error
 
 
 @patch("runner.judge.llm_judge", return_value={"score": 4, "rationale": "Good."})

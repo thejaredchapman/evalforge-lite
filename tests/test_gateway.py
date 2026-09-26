@@ -61,6 +61,24 @@ def test_prepare_creds_bedrock_without_any_auth_is_an_error():
     assert "error" in prepared["bedrock"]
 
 
+@pytest.mark.parametrize("bad_value", ["ABSKexample\n", " ABSKexample", "ABSK\texample"])
+def test_prepare_creds_rejects_bedrock_api_key_with_whitespace_or_control_chars(bad_value):
+    prepared = gateway.prepare_creds({"bedrock": {"region": "us-east-1", "api_key": bad_value}})
+    assert prepared["bedrock"] == {"error": "Bedrock credentials contain whitespace or control characters."}
+
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("access_key_id", "AKIAEXAMPLE\n"),
+    ("secret_access_key", " secret"),
+    ("session_token", "tok\twith\ttabs"),
+])
+def test_prepare_creds_rejects_bedrock_access_key_fields_with_whitespace_or_control_chars(field, bad_value):
+    raw = {"region": "us-east-1", "access_key_id": "AKIAEXAMPLE", "secret_access_key": "secret"}
+    raw[field] = bad_value
+    prepared = gateway.prepare_creds({"bedrock": raw})
+    assert prepared["bedrock"] == {"error": "Bedrock credentials contain whitespace or control characters."}
+
+
 @pytest.mark.parametrize("project,region", [
     ("evil.com#", "us-central1"),
     ("my-project-123", "x.evil.com#"),
@@ -75,6 +93,13 @@ def test_prepare_creds_accepts_vertex_global_region_with_access_token():
     prepared = gateway.prepare_creds({"vertex": {"project": "my-project-123", "region": "global",
                                                  "access_token": "ya29.x"}})
     assert prepared["vertex"] == {"project": "my-project-123", "region": "global", "access_token": "ya29.x"}
+
+
+@pytest.mark.parametrize("bad_value", ["ya29.x\n", " ya29.x", "ya29.\tx"])
+def test_prepare_creds_rejects_vertex_access_token_with_whitespace_or_control_chars(bad_value):
+    prepared = gateway.prepare_creds({"vertex": {"project": "my-project-123", "region": "us-central1",
+                                                 "access_token": bad_value}})
+    assert prepared["vertex"] == {"error": "Vertex credentials contain whitespace or control characters."}
 
 
 @patch("gateway.vertex.mint_token", return_value="ya29.minted")
@@ -119,6 +144,12 @@ def test_prepare_creds_is_idempotent(mock_mint):
 
 def test_prepare_creds_tolerates_non_dict():
     assert gateway.prepare_creds(None) == {}
+
+
+@pytest.mark.parametrize("bad_value", ["sk-or-v1-test\n", " sk-or-v1-test", "sk-or-v1-\ttest"])
+def test_prepare_creds_rejects_openrouter_key_with_whitespace_or_control_chars(bad_value):
+    prepared = gateway.prepare_creds({"openrouter": bad_value})
+    assert prepared["openrouter"] == {"error": "OpenRouter credentials contain whitespace or control characters."}
 
 
 @patch("gateway.openrouter.call_model", return_value=FAKE_RESULT)
@@ -216,9 +247,16 @@ def test_call_target_model_without_route_raises():
                             {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}})
 
 
-def test_normalize_creds_prefers_creds_dict():
-    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
+def test_normalize_creds_keeps_creds_unchanged_when_openrouter_already_present():
+    creds = {"openrouter": "sk-or-v1-existing", "bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
     assert gateway.normalize_creds(creds, "sk-or-v1-x") is creds
+
+
+def test_normalize_creds_merges_legacy_api_key_when_creds_lacks_openrouter():
+    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
+    result = gateway.normalize_creds(creds, "sk-or-v1-x")
+    assert result == {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}, "openrouter": "sk-or-v1-x"}
+    assert result is not creds
 
 
 def test_normalize_creds_turns_legacy_api_key_into_openrouter_creds():
