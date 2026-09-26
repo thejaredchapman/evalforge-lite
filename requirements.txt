@@ -1,5 +1,7 @@
 flask
 requests
+botocore
+google-auth
 fpdf2
 pdfplumber
 pytest

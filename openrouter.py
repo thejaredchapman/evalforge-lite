@@ -2,10 +2,12 @@ import time
 
 import requests
 
+from errors import GatewayError
+
 API_BASE = "https://openrouter.ai/api/v1"
 
 
-class OpenRouterError(Exception):
+class OpenRouterError(GatewayError):
     pass
 
 

@@ -83,3 +83,8 @@ def test_call_model_raises_openrouter_error_on_malformed_json(mock_post):
 
     with pytest.raises(openrouter.OpenRouterError):
         openrouter.call_model("openai/gpt-4o-mini", [{"role": "user", "content": "hi"}], api_key="sk-or-v1-test")
+
+
+def test_openrouter_error_is_a_gateway_error():
+    from errors import GatewayError
+    assert issubclass(openrouter.OpenRouterError, GatewayError)
