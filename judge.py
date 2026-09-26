@@ -2,7 +2,7 @@ import json
 import re
 
 import config
-import openrouter
+import gateway
 
 JUDGE_PROMPT_TEMPLATE = """You are an expert evaluator. Given a rubric and a model's response, score the response.
 
@@ -32,32 +32,32 @@ def _extract_json(text):
     return json.loads(match.group(0))
 
 
-def llm_judge(response_text, rubric, api_key, judge_model=None):
-    model = judge_model or config.JUDGE_MODEL
+def llm_judge(response_text, rubric, creds, backend="openrouter", judge_model=None):
     prompt = JUDGE_PROMPT_TEMPLATE.format(rubric=rubric, response=response_text)
 
     try:
-        result = openrouter.call_model(model, [{"role": "user", "content": prompt}], api_key=api_key)
+        model = judge_model or config.JUDGE_MODELS[backend]
+        result = gateway.call_backend(backend, model, [{"role": "user", "content": prompt}], creds)
         parsed = _extract_json(result["text"])
         score = int(parsed["score"])
         rationale = str(parsed["rationale"])
-    except (openrouter.OpenRouterError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (gateway.GatewayError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return {"score": None, "rationale": "Could not parse judge response."}
 
     return {"score": score, "rationale": rationale}
 
 
-def overall_verdict(aggregate_stats, api_key, judge_model=None):
-    model = judge_model or config.JUDGE_MODEL
+def overall_verdict(aggregate_stats, creds, backend="openrouter", judge_model=None):
     stats_text = "\n".join(f"- {model_id}: {stats}" for model_id, stats in aggregate_stats.items())
     prompt = VERDICT_PROMPT_TEMPLATE.format(stats=stats_text)
 
     try:
-        result = openrouter.call_model(model, [{"role": "user", "content": prompt}], api_key=api_key)
+        model = judge_model or config.JUDGE_MODELS[backend]
+        result = gateway.call_backend(backend, model, [{"role": "user", "content": prompt}], creds)
         parsed = _extract_json(result["text"])
         winner = str(parsed["winner"])
         rationale = str(parsed["rationale"])
-    except (openrouter.OpenRouterError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (gateway.GatewayError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return {"winner": None, "rationale": "Could not parse verdict response."}
 
     return {"winner": winner, "rationale": rationale}
