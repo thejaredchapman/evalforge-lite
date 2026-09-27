@@ -322,6 +322,13 @@ field from before the 4-model comparison work, note:
 - All state is in-memory only, capped at 5 runs per session — nothing is
   persisted to disk.
 
+## Contributing
+
+Contributions are welcome: bug reports, model-catalog updates, new checks,
+docs, and new backends. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
+tests, and the pull request process. When the app shows an error, the popup's
+**Report an issue on GitHub** button opens a pre-filled bug report.
+
 ## License
 
 [MIT](LICENSE)

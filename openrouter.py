@@ -2,7 +2,7 @@ import time
 
 import requests
 
-from errors import GatewayError
+from errors import GatewayError, describe_request_error
 
 API_BASE = "https://openrouter.ai/api/v1"
 
@@ -26,7 +26,7 @@ def call_model(model_id, messages, api_key, timeout=60):
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
-        raise OpenRouterError(str(e)) from e
+        raise OpenRouterError(describe_request_error(e)) from e
     except ValueError as e:
         raise OpenRouterError(f"Malformed JSON in OpenRouter response: {str(e)}") from e
 

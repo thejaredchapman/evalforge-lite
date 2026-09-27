@@ -397,3 +397,45 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
 .advice-box { font-size: 13px; margin-bottom: 12px; }
 .help-box summary { cursor: pointer; font-size: 13px; }
 .help-box ul { font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
+
+/* Error popup: full provider error text (resp.text) for troubleshooting. */
+.error-dialog {
+  max-width: min(720px, calc(100vw - 32px));
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  padding: 20px;
+}
+.error-dialog::backdrop { background: var(--overlay); }
+.error-dialog h2 { margin: 0 0 8px; color: var(--status-fail); font-size: 1.15rem; }
+.error-dialog-details {
+  max-height: 45vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+.error-dialog-note { color: var(--muted); font-size: 0.85rem; }
+.error-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.error-dialog-status { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; margin: 6px 0 0; text-align: right; }
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  text-decoration: none;
+}
+.button-link:hover { opacity: 0.85; }
+.results-cell .status-fail { white-space: pre-wrap; word-break: break-word; }
+.error-details-button { margin-left: 8px; padding: 2px 8px; font-size: 0.8rem; }
+.page-footer { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }

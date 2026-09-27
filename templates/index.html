@@ -194,8 +194,23 @@
   </section>
 
   <footer class="page-footer">
-    <a href="https://openrouter.ai/docs/guides/overview/report-feedback" target="_blank" rel="noopener">Report a problem</a>
+    <a href="https://github.com/thejaredchapman/evalforge-lite/issues/new?template=bug_report.md" target="_blank" rel="noopener">Report an issue</a>
+    <a href="https://github.com/thejaredchapman/evalforge-lite/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
+    <a href="https://openrouter.ai/docs/guides/overview/report-feedback" target="_blank" rel="noopener">Report an OpenRouter problem</a>
   </footer>
+
+  <dialog id="error-dialog" class="error-dialog" aria-labelledby="error-dialog-title" aria-describedby="error-dialog-summary">
+    <h2 id="error-dialog-title">Something went wrong</h2>
+    <p id="error-dialog-summary"></p>
+    <pre id="error-dialog-details" class="error-dialog-details" tabindex="0"></pre>
+    <p class="error-dialog-note">Credentials are redacted automatically, but review the details before sharing them publicly.</p>
+    <div class="error-dialog-actions">
+      <button type="button" id="error-dialog-copy" class="secondary">Copy details</button>
+      <a id="error-dialog-report" class="button-link secondary" target="_blank" rel="noopener">Report an issue on GitHub</a>
+      <button type="button" id="error-dialog-close">Close</button>
+    </div>
+    <p id="error-dialog-status" class="error-dialog-status" role="status" aria-live="polite"></p>
+  </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>

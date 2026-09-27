@@ -5,7 +5,7 @@ import requests
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
-from errors import GatewayError
+from errors import GatewayError, describe_request_error
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
@@ -53,7 +53,7 @@ def call_model(model_id, messages, creds, timeout=60):
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
-        raise VertexError(str(e)) from e
+        raise VertexError(describe_request_error(e)) from e
     except ValueError as e:
         raise VertexError(f"Malformed JSON in Vertex response: {str(e)}") from e
 

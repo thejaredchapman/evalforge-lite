@@ -21,6 +21,92 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 }
 
+// ---------- Error popup ----------
+// Shows the full error text (including the provider's response body, already
+// scrubbed of credentials server-side) so users can troubleshoot, copy it, or
+// file a GitHub issue.
+const ISSUES_URL = "https://github.com/thejaredchapman/evalforge-lite/issues/new";
+const MAX_ISSUE_DETAILS = 4000;
+
+function showErrorDialog(title, summary, details) {
+  const dialog = document.getElementById("error-dialog");
+  document.getElementById("error-dialog-title").textContent = title;
+  document.getElementById("error-dialog-summary").textContent = summary;
+  document.getElementById("error-dialog-details").textContent = details;
+  document.getElementById("error-dialog-status").textContent = "";
+
+  const issueDetails = details.length > MAX_ISSUE_DETAILS
+    ? `${details.slice(0, MAX_ISSUE_DETAILS)}\n[truncated]`
+    : details;
+  const params = new URLSearchParams({
+    template: "bug_report.md",
+    title: `[Error] ${title}`,
+    body: `**What happened:** ${summary}\n\n**Error details:**\n\`\`\`\n${issueDetails}\n\`\`\`\n\n**Steps to reproduce:**\n1. \n\n**Backend(s) and model(s):**\n`,
+  });
+  document.getElementById("error-dialog-report").href = `${ISSUES_URL}?${params}`;
+
+  if (!dialog.open) dialog.showModal();
+}
+
+function errorText(data, fallback) {
+  return (data && typeof data.error === "string" && data.error) || fallback;
+}
+
+async function readJson(resp) {
+  try {
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+
+function showCellErrors(run) {
+  const failures = [];
+  (run.results || []).forEach((row) => {
+    Object.entries(row.cells || {}).forEach(([modelId, cell]) => {
+      if (cell.error) failures.push({ modelId, prompt: row.test_case.prompt, error: cell.error });
+    });
+  });
+  if (failures.length === 0) return;
+  const details = failures
+    .map((f) => `Model: ${f.modelId}\nPrompt: ${f.prompt}\n${f.error}`)
+    .join("\n\n----------\n\n");
+  showErrorDialog(
+    failures.length === 1 ? "A model call failed" : `${failures.length} model calls failed`,
+    "The run finished, but some models returned errors. The provider's full response is below.",
+    details,
+  );
+}
+
+// Network failures (server down, connection dropped) reject fetch() before any
+// response exists; surface those in the same popup instead of failing silently.
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  const details = (reason && (reason.stack || reason.message)) || String(reason);
+  const runStatus = document.getElementById("run-status");
+  if (runStatus && runStatus.textContent === "Running...") runStatus.textContent = "Error: request failed.";
+  showErrorDialog(
+    "Request failed",
+    "The app couldn't reach the server or got an unexpected response. Check that the app is still running and try again.",
+    details,
+  );
+});
+
+document.getElementById("error-dialog-close").addEventListener("click", () => {
+  document.getElementById("error-dialog").close();
+});
+
+document.getElementById("error-dialog-copy").addEventListener("click", async () => {
+  const status = document.getElementById("error-dialog-status");
+  const details = document.getElementById("error-dialog-details").textContent;
+  try {
+    await navigator.clipboard.writeText(details);
+    status.textContent = "Copied to clipboard.";
+  } catch {
+    status.textContent = "Copy failed. Select the text above and copy it manually.";
+  }
+});
+
 function maxModels() {
   return (state.catalog && state.catalog.max_models) || 4;
 }
@@ -453,10 +539,14 @@ async function evaluatePrompt(idx) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, creds, judge_backend: judgeBackend() }),
   });
-  const data = await resp.json();
+  const data = await readJson(resp);
 
-  if (!resp.ok || data.score === null) {
-    feedbackEl.textContent = data.feedback || data.error || "Could not evaluate prompt.";
+  if (!resp.ok || !data || data.score === null) {
+    const message = (data && (data.error || data.feedback)) || `HTTP ${resp.status} ${resp.statusText}`;
+    feedbackEl.textContent = message;
+    if (!resp.ok || (data && data.error)) {
+      showErrorDialog("Prompt evaluation failed", "The prompt judge could not score this prompt.", message);
+    }
     return;
   }
   feedbackEl.textContent = `${data.score}/5 — ${data.feedback}`;
@@ -536,8 +626,10 @@ async function runComparison() {
   }
 
   if (!resp.ok) {
-    const data = await resp.json();
-    runStatus.textContent = `Error: ${data.error}`;
+    const data = await readJson(resp);
+    const message = errorText(data, `HTTP ${resp.status} ${resp.statusText}`);
+    runStatus.textContent = `Error: ${message.split("\n")[0]}`;
+    showErrorDialog("The comparison run failed", "The server could not complete this run.", message);
     return;
   }
 
@@ -545,6 +637,7 @@ async function runComparison() {
   runStatus.textContent = "";
   state.runs.push(data);
   showRun(data.run_id);
+  showCellErrors(data);
 }
 
 function renderHistory() {
@@ -845,7 +938,16 @@ function renderResults(data) {
       if (cell.blocked) {
         cellEl.innerHTML = `<span class="status-blocked">[${escapeHtml(modelId)}] BLOCKED: ${escapeHtml(cell.policy_clause)} — ${escapeHtml(cell.policy_reason)}</span>`;
       } else if (cell.error) {
-        cellEl.innerHTML = `<span class="status-fail">[${escapeHtml(modelId)}] ERROR: ${escapeHtml(cell.error)}</span>`;
+        cellEl.innerHTML = `<span class="status-fail">[${escapeHtml(modelId)}] ERROR: ${escapeHtml(cell.error.split("\n")[0])}</span>`;
+        const detailsButton = document.createElement("button");
+        detailsButton.type = "button";
+        detailsButton.className = "secondary error-details-button";
+        detailsButton.textContent = "Details";
+        detailsButton.setAttribute("aria-label", `Show error details for ${modelId}`);
+        detailsButton.addEventListener("click", () => {
+          showErrorDialog(`${modelId} failed`, `Prompt: ${row.test_case.prompt}`, cell.error);
+        });
+        cellEl.appendChild(detailsButton);
       } else {
         cellEl.innerHTML = `<strong>${escapeHtml(modelId)}</strong><p>${escapeHtml(cell.response_text)}</p>`;
       }

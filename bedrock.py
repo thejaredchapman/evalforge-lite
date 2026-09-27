@@ -7,7 +7,7 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
 
-from errors import GatewayError
+from errors import GatewayError, describe_request_error
 
 _GEO_PREFIXES = (("us-gov-", "us-gov"), ("us-", "us"), ("eu-", "eu"), ("ap-", "apac"))
 
@@ -76,7 +76,7 @@ def call_model(model_id, messages, creds, timeout=60):
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
-        raise BedrockError(str(e)) from e
+        raise BedrockError(describe_request_error(e)) from e
     except ValueError as e:
         raise BedrockError(f"Malformed JSON in Bedrock response: {str(e)}") from e
 
