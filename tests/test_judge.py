@@ -164,3 +164,36 @@ def test_evaluate_prompt_passes_creds_backend_and_model_through(mock_call):
 def test_evaluate_prompt_unknown_backend_degrades_instead_of_raising():
     result = judge.evaluate_prompt("some prompt", creds={}, backend="azure")
     assert result["score"] is None
+
+
+_SUMMARY = {
+    "models": {"anthropic/claude-sonnet-4.5": {"quality": 80, "response_time": 20, "throughput": 30, "cost_efficiency": 50}},
+    "suggestions": {"anthropic/claude-sonnet-4.5": {"model_id": "anthropic/claude-haiku-4.5", "name": "Claude Haiku 4.5",
+                                                     "reason_code": "latency"}},
+}
+
+
+@patch("judge.gateway.call_backend")
+def test_explain_recommendations_returns_advice(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"advice": "Sonnet was slow; Claude Haiku 4.5 should respond faster."}')
+    text = judge.explain_recommendations(_SUMMARY, creds={"openrouter": "sk-or-v1-test"})
+    assert text == "Sonnet was slow; Claude Haiku 4.5 should respond faster."
+    prompt = mock_call.call_args[0][2][0]["content"]
+    assert "Claude Haiku 4.5" in prompt and "anthropic/claude-sonnet-4.5" in prompt
+
+
+@patch("judge.gateway.call_backend")
+def test_explain_recommendations_rejects_disallowed_models(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"advice": "Try GPT-5 instead."}')
+    assert judge.explain_recommendations(_SUMMARY, creds={}, disallowed_terms=["GPT-5", "openai/gpt-5"]) == ""
+
+
+@patch("judge.gateway.call_backend", side_effect=gateway.GatewayError("down"))
+def test_explain_recommendations_fails_soft(mock_call):
+    assert judge.explain_recommendations(_SUMMARY, creds={}) == ""
+
+
+@patch("judge.gateway.call_backend")
+def test_explain_recommendations_unparseable_is_empty(mock_call):
+    mock_call.side_effect = _fake_call_backend("no json here")
+    assert judge.explain_recommendations(_SUMMARY, creds={}) == ""
