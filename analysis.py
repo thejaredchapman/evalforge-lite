@@ -11,6 +11,11 @@ import judge
 _PROVIDER_ALIASES = {"openai": "openai", "anthropic": "anthropic", "google": "google",
                      "meta": "meta-llama", "meta-llama": "meta-llama"}
 
+_PROVIDER_STEMS = {"openai": ["OpenAI", "GPT", "ChatGPT"], "anthropic": ["Anthropic", "Claude"],
+                   "google": ["Google", "Gemini", "Gemma"], "meta-llama": ["Meta", "Llama"]}
+_OFF_CATALOG_VENDORS = ["DeepSeek", "Mistral", "Mixtral", "Qwen", "Grok", "xAI", "Cohere"]
+_BACKEND_LABEL_TERMS = ["OpenRouter", "Amazon Bedrock", "Bedrock", "Google Vertex AI", "Vertex AI"]
+
 
 def _mean(values):
     return statistics.mean(values) if values else None
@@ -117,14 +122,18 @@ def _bias_note(judge_model, targets, catalog_dict):
 
 def _disallowed_terms(catalog_dict, allowed_ids, allowed_names):
     allowed = [a.lower() for a in (*allowed_ids, *allowed_names)]
+    present_providers = {catalog.find_model(catalog_dict, model_id)[0] for model_id in allowed_ids}
     terms = []
-    for provider in catalog_dict.values():
+    for provider_id, provider in catalog_dict.items():
         for model in provider["models"]:
             for term in (model["id"], model["name"]):
                 low = term.lower()
                 if low in allowed:
                     continue
                 terms.append(term)
+        if provider_id not in present_providers:
+            terms.extend(_PROVIDER_STEMS.get(provider_id, []))
+    terms.extend(_OFF_CATALOG_VENDORS)
     return terms
 
 
@@ -162,7 +171,7 @@ def build_run_result(results, targets, creds, judge_backend):
         advice = judge.explain_recommendations(
             summary, creds=creds, backend=judge_backend,
             disallowed_terms=_disallowed_terms(catalog_dict, allowed_ids, allowed_names),
-            allowed_terms=[*allowed_ids, *allowed_names],
+            allowed_terms=[*allowed_ids, *allowed_names, *_BACKEND_LABEL_TERMS],
         )
 
     judge_model = judge_model_label(judge_backend, creds)

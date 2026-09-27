@@ -74,3 +74,38 @@ def test_explainer_receives_allowed_terms_and_stats_are_floats(mock_verdict, moc
     allowed = mock_explain.call_args[1]["allowed_terms"]
     assert "anthropic/claude-sonnet-4.5" in allowed and "Claude Haiku 4.5" in allowed
     assert isinstance(out["stats"]["openai/gpt-5"]["avg_latency_ms"], float)
+
+
+def test_disallowed_terms_include_off_provider_stems_and_off_catalog_vendors():
+    import catalog
+    terms = analysis._disallowed_terms(catalog.load_catalog(), ["openai/gpt-5", "openai/gpt-4o"], ["GPT-5", "GPT-4o"])
+    assert "Claude" in terms and "Anthropic" in terms
+    assert "Gemini" in terms and "Llama" in terms
+    assert "DeepSeek" in terms
+    assert "GPT" not in terms and "OpenAI" not in terms
+
+
+@patch("analysis.judge.explain_recommendations", return_value="")
+@patch("analysis.judge.overall_verdict", return_value={"winner": None, "rationale": ""})
+def test_explainer_allowed_terms_include_backend_labels(mock_verdict, mock_explain):
+    analysis.build_run_result(RESULTS, TARGETS, {"openrouter": "k"}, "openrouter")
+    allowed = mock_explain.call_args[1]["allowed_terms"]
+    assert "Google Vertex AI" in allowed
+
+
+@patch("judge.gateway.call_backend")
+@patch("analysis.judge.overall_verdict", return_value={"winner": None, "rationale": ""})
+def test_advice_naming_off_catalog_model_is_dropped_end_to_end(mock_verdict, mock_call_backend):
+    results = [{"test_case": {"prompt": "q", "rubric": "r"}, "cells": {
+        "openai/gpt-5": _ok(1000, 50.0, score=5),
+        "openai/gpt-4o": _ok(1200, 40.0, score=4),
+    }}]
+    targets = ["openai/gpt-5", "openai/gpt-4o"]
+
+    def _fake(backend, model_id, messages, creds, timeout=60):
+        return {"text": '{"advice": "GPT-5 is slow; consider Claude or DeepSeek instead."}',
+                "latency_ms": 5, "cost_usd": 0.0, "tokens": 10}
+    mock_call_backend.side_effect = _fake
+
+    out = analysis.build_run_result(results, targets, {"openrouter": "sk-or-v1-test"}, "openrouter")
+    assert out["advice"] == ""

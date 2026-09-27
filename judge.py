@@ -125,6 +125,10 @@ def explain_recommendations(summary, creds, backend="openrouter", judge_model=No
     remaining = advice.lower()
     for term in sorted((t.lower() for t in allowed_terms if t), key=len, reverse=True):
         remaining = remaining.replace(term, " ")
-    if any(term.lower() in remaining for term in disallowed_terms if term):
-        return ""
+    for term in disallowed_terms:
+        if not term:
+            continue
+        pattern = r"(?<![a-z0-9])" + re.escape(term.lower()) + r"(?![a-z0-9])"
+        if re.search(pattern, remaining):
+            return ""
     return advice

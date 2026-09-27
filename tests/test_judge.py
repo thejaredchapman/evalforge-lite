@@ -224,3 +224,19 @@ def test_explain_recommendations_blocks_shorter_disallowed_name_next_to_allowed(
 def test_explain_recommendations_malformed_summary_is_empty(mock_call, bad_summary):
     assert judge.explain_recommendations(bad_summary, creds={}) == ""
     mock_call.assert_not_called()
+
+
+@patch("judge.gateway.call_backend")
+def test_explain_recommendations_word_boundary_ignores_substring_match(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"advice": "This metadata field is unaffected by the change."}')
+    assert judge.explain_recommendations(_SUMMARY, creds={}, disallowed_terms=["Meta"]) == (
+        "This metadata field is unaffected by the change."
+    )
+
+
+@patch("judge.gateway.call_backend")
+def test_explain_recommendations_word_boundary_blocks_whole_word(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"advice": "Sonnet is slow; consider Claude or DeepSeek instead."}')
+    assert judge.explain_recommendations(
+        _SUMMARY, creds={}, disallowed_terms=["Claude", "DeepSeek"],
+    ) == ""
