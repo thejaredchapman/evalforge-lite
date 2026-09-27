@@ -292,7 +292,9 @@ def test_weighted_score_none_when_nothing_scored():
 
 
 def test_rank_targets_orders_by_priority():
-    grades = {"a": _grade(95, response_time=0, throughput=0, cost_efficiency=0),
+    # quality: a = 95*.7 + 50*.1*3 = 81.5 vs b = 70*.7 + 100*.1*3 = 79  -> a first
+    # fastest: a = 95*.2 + 50*.4 + 50*.4 = 59 vs b = 70*.2 + 100*.4 + 100*.4 = 94  -> b first
+    grades = {"a": _grade(95, response_time=50, throughput=50, cost_efficiency=50),
               "b": _grade(70, response_time=100, throughput=100, cost_efficiency=100)}
     stats = {"a": {"ok_cells": 1, "avg_latency_ms": 900}, "b": {"ok_cells": 1, "avg_latency_ms": 100}}
     assert grading.rank_targets(grades, stats, "quality") == ["a", "b"]
@@ -880,7 +882,7 @@ def _ok(latency, tps, cost=0.001, score=4):
 
 
 RESULTS = [{"test_case": {"prompt": "q", "rubric": "r"}, "cells": {
-    "anthropic/claude-sonnet-4.5": _ok(3000, 20.0, score=4),
+    "anthropic/claude-sonnet-4.5": _ok(3000, 20.0, score=5),  # same quality, 3x slower -> "latency" weakness
     "openai/gpt-5": _ok(1000, 80.0, score=5),
     "meta-llama/llama-4-scout": {"blocked": False, "error": "down"},
 }}]
