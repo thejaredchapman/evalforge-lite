@@ -25,7 +25,7 @@ say what matters most and explaining how to read the results.
 
 ## 1. Four-model cap
 
-- `app.py` `_validate_run_body`: `models` must have 1–4 entries → otherwise `400 "Pick between 1 and 4 models."`
+- `app.py` `_validate_run_body`: more than 4 `models` → `400 "Pick at most 4 models."` (an empty list stays allowed server-side for backward compatibility; the UI requires ≥ 1)
   (checked before creds and the rate limiter, like the other validation).
 - `mcp_server.run_comparison`: same rule, same message, returned as `{"error": ...}`.
 - A shared constant `config.MAX_MODELS = 4` is used by both, and exposed to the page via `/api/catalog`
