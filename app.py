@@ -8,7 +8,9 @@ from collections import deque
 
 from flask import Flask, jsonify, render_template, request, send_file
 
+import analysis
 import catalog
+import config
 import gateway
 import grading
 import judge
@@ -51,7 +53,13 @@ def index():
 @app.route("/api/catalog")
 def api_catalog():
     cat = catalog.load_catalog()
-    return jsonify({"providers": cat, "frontier": catalog.frontier_models(cat)})
+    return jsonify({
+        "providers": cat,
+        "frontier": catalog.frontier_models(cat),
+        "max_models": config.MAX_MODELS,
+        "priority_weights": grading.PRIORITY_WEIGHTS,
+        "priority_labels": grading.PRIORITY_LABELS,
+    })
 
 
 @app.route("/api/suggest")
@@ -104,55 +112,6 @@ def api_policy():
     return _with_session_cookie(jsonify({"ok": True}), session_id)
 
 
-def _aggregate_stats(results, model_ids):
-    stats = {
-        m: {
-            "judge_scores": [], "rule_check_results": [], "judge_rationales": [],
-            "costs": [], "latencies": [],
-        }
-        for m in model_ids
-    }
-    for row in results:
-        for model_id, cell in row["cells"].items():
-            if cell.get("blocked") or cell.get("error"):
-                continue
-            if cell.get("judge_score") is not None:
-                stats[model_id]["judge_scores"].append(cell["judge_score"])
-            if cell.get("judge_rationale"):
-                stats[model_id]["judge_rationales"].append(cell["judge_rationale"])
-            for check_result in cell.get("checks") or []:
-                stats[model_id]["rule_check_results"].append(check_result["passed"])
-            stats[model_id]["costs"].append(cell.get("cost_usd", 0.0))
-            stats[model_id]["latencies"].append(cell.get("latency_ms", 0))
-    return stats
-
-
-def _cost_latency_stats(agg_stats):
-    result = {}
-    for model_id, s in agg_stats.items():
-        total_cost = sum(s["costs"])
-        avg_latency = sum(s["latencies"]) / len(s["latencies"]) if s["latencies"] else 0.0
-        result[model_id] = {
-            "total_cost_usd": round(total_cost, 6),
-            "avg_latency_ms": round(avg_latency, 1),
-        }
-    return result
-
-
-def _category_scores_by_model(agg_stats, stats):
-    all_costs = [stats[m]["total_cost_usd"] for m, s in agg_stats.items() if s["costs"]]
-    all_latencies = [stats[m]["avg_latency_ms"] for m, s in agg_stats.items() if s["latencies"]]
-
-    result = {}
-    for model_id, s in agg_stats.items():
-        cost = stats[model_id]["total_cost_usd"] if s["costs"] else None
-        latency = stats[model_id]["avg_latency_ms"] if s["latencies"] else None
-        result[model_id] = grading.category_scores(
-            s["judge_scores"], s["rule_check_results"], cost, all_costs, latency, all_latencies
-        )
-    return result
-
-
 def _validate_run_body(body):
     if not isinstance(body, dict):
         return "Request body must be JSON."
@@ -164,6 +123,11 @@ def _validate_run_body(body):
         return "Missing required field: test_cases."
     if not isinstance(body.get("models"), list) or not all(isinstance(m, str) for m in body["models"]):
         return "Missing required field: models."
+    if len(body["models"]) > config.MAX_MODELS:
+        return f"Pick at most {config.MAX_MODELS} models."
+    repeats = body.get("repeats", 1)
+    if isinstance(repeats, bool) or repeats not in (1, 2, 3):
+        return "repeats must be 1, 2, or 3."
     return None
 
 
@@ -180,6 +144,7 @@ def api_run():
     judge_backend = body.get("judge_backend", "openrouter")
     test_cases = body["test_cases"]
     model_ids = body["models"]
+    repeats = body.get("repeats", 1)
 
     with _store_lock:
         policy_text = _policy_store.get(session_id)
@@ -196,44 +161,16 @@ def api_run():
 
     try:
         results = runner.run(
-            test_cases, model_ids, creds=creds, policy_text=policy_text, judge_backend=judge_backend
+            test_cases, model_ids, creds=creds, policy_text=policy_text, judge_backend=judge_backend,
+            repeats=repeats,
         )
-
-        for row in results:
-            row["best_model"] = grading.best_model_for_test_case(row["cells"])
-
-        agg_stats = _aggregate_stats(results, model_ids)
-        grades = {
-            model_id: grading.grade_model(
-                s["judge_scores"], s["rule_check_results"], s["judge_rationales"]
-            )
-            for model_id, s in agg_stats.items()
-        }
-        stats = _cost_latency_stats(agg_stats)
-        categories = _category_scores_by_model(agg_stats, stats)
-        for model_id in grades:
-            grades[model_id]["categories"] = categories[model_id]
-
-        verdict = {"winner": None, "rationale": "No models were run."}
-        if model_ids:
-            verdict = judge.overall_verdict(
-                {m: {"score": grades[m]["score"], "letter": grades[m]["letter"]} for m in model_ids},
-                creds=creds,
-                backend=judge_backend,
-            )
+        run_result = analysis.build_run_result(results, model_ids, creds, judge_backend)
     except Exception as e:
         message = scrub.scrub(str(e), raw_creds)
         logger.error("run failed: %s", message)
         return _with_session_cookie(_error_response(message, 503), session_id)
 
-    run_result = {
-        "run_id": str(uuid.uuid4()),
-        "created_at": time.time(),
-        "results": results,
-        "grades": grades,
-        "stats": stats,
-        "verdict": verdict,
-    }
+    run_result = {"run_id": str(uuid.uuid4()), "created_at": time.time(), **run_result}
 
     with _store_lock:
         history = _run_history_store.setdefault(session_id, deque(maxlen=5))
@@ -267,6 +204,10 @@ def _find_run(session_id, run_id):
 @app.route("/api/report")
 def api_report():
     session_id = _get_session_id()
+    priority = request.args.get("priority", "balanced")
+    if priority not in grading.PRIORITY_WEIGHTS:
+        return _with_session_cookie(_error_response("Invalid priority.", 400), session_id)
+
     run_result = _find_run(session_id, request.args.get("run_id"))
     if not run_result:
         return _with_session_cookie(_error_response("no_run_available", 404), session_id)

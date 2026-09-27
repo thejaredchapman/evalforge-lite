@@ -2,6 +2,8 @@ import io
 import re
 from unittest.mock import patch
 
+import pytest
+
 import app as app_module
 import limiter
 
@@ -135,9 +137,10 @@ def test_api_run_non_json_body_returns_400():
     assert resp.status_code == 400
 
 
+@patch("analysis.judge.explain_recommendations", return_value="")
 @patch("app.runner.run")
 @patch("app.judge.overall_verdict")
-def test_api_run_returns_results_grades_and_verdict(mock_verdict, mock_run):
+def test_api_run_returns_results_grades_and_verdict(mock_verdict, mock_run, mock_explain):
     mock_run.return_value = [{
         "test_case": {"prompt": "q1"},
         "cells": {
@@ -429,3 +432,44 @@ def test_api_evaluate_prompt_without_judge_creds_returns_400():
     })
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "Vertex AI credentials are required for the judge backend."
+
+
+def test_api_run_rejects_more_than_four_models():
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q"}], "models": ["a/1", "a/2", "a/3", "a/4", "a/5"], "api_key": "sk-or-v1-test"})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Pick at most 4 models."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+@pytest.mark.parametrize("repeats", [0, 4, "2", True])
+def test_api_run_rejects_bad_repeats(repeats):
+    resp = _client().post("/api/run", json={
+        "test_cases": [], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-test", "repeats": repeats})
+    assert resp.status_code == 400
+
+
+@patch("app.analysis.build_run_result")
+@patch("app.runner.run")
+def test_api_run_passes_repeats_and_returns_analysis_fields(mock_run, mock_build):
+    mock_run.return_value = []
+    mock_build.return_value = {"results": [], "grades": {}, "stats": {}, "verdict": {"winner": None, "rationale": ""},
+                               "suggestions": {}, "advice": "", "judge": {"backend": "openrouter", "model": "m"},
+                               "bias_note": ""}
+    resp = _client().post("/api/run", json={
+        "test_cases": [], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-test", "repeats": 3})
+    assert resp.status_code == 200
+    assert mock_run.call_args[1]["repeats"] == 3
+    body = resp.get_json()
+    assert {"run_id", "created_at", "suggestions", "advice", "judge", "bias_note"} <= set(body)
+
+
+def test_api_catalog_exposes_cap_and_priority_weights():
+    body = _client().get("/api/catalog").get_json()
+    assert body["max_models"] == 4
+    assert set(body["priority_weights"]) == {"balanced", "quality", "fastest", "cheapest"}
+    assert body["priority_labels"]["fastest"] == "Fastest"
+
+
+def test_api_report_rejects_invalid_priority():
+    assert _client().get("/api/report?priority=vibes").status_code == 400

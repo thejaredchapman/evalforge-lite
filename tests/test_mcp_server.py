@@ -76,9 +76,10 @@ def test_run_comparison_missing_api_key_returns_error():
     assert "api_key" in result["error"]
 
 
+@patch("analysis.judge.explain_recommendations", return_value="")
 @patch("mcp_server.runner.run")
 @patch("mcp_server.judge.overall_verdict")
-def test_run_comparison_returns_results_grades_and_verdict(mock_verdict, mock_run):
+def test_run_comparison_returns_results_grades_and_verdict(mock_verdict, mock_run, mock_explain):
     mock_run.return_value = [{
         "test_case": {"prompt": "q1"},
         "cells": {
@@ -285,3 +286,29 @@ def test_run_comparison_invalid_backend_creds_rejected_before_rate_limit():
 def test_evaluate_prompt_tool_without_judge_creds_returns_error():
     result = mcp_server.evaluate_prompt("hi", api_key="sk-or-v1-test", judge_backend="vertex")
     assert result["error"] == "Vertex AI credentials are required for the judge backend."
+
+
+def test_run_comparison_rejects_more_than_four_models():
+    result = mcp_server.run_comparison(test_cases=[], models=["a/1", "a/2", "a/3", "a/4", "a/5"], api_key="sk-or-v1-test")
+    assert result == {"error": "Pick at most 4 models."}
+
+
+def test_run_comparison_rejects_invalid_priority_and_repeats():
+    assert mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test", priority="vibes") == {"error": "Invalid priority."}
+    assert mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test", repeats=5) == {"error": "repeats must be 1, 2, or 3."}
+
+
+@patch("mcp_server.analysis.build_run_result")
+@patch("mcp_server.runner.run", return_value=[])
+def test_run_comparison_returns_ranking_for_priority(mock_run, mock_build):
+    mock_build.return_value = {
+        "results": [], "verdict": {"winner": None, "rationale": ""}, "suggestions": {}, "advice": "",
+        "judge": {"backend": "openrouter", "model": "m"}, "bias_note": "",
+        "grades": {"a/x": {"score": 95, "categories": {"response_time": 0, "throughput": 0, "cost_efficiency": 0}},
+                   "a/y": {"score": 70, "categories": {"response_time": 100, "throughput": 100, "cost_efficiency": 100}}},
+        "stats": {"a/x": {"ok_cells": 1, "avg_latency_ms": 900}, "a/y": {"ok_cells": 1, "avg_latency_ms": 100}},
+    }
+    result = mcp_server.run_comparison(test_cases=[], models=["a/x", "a/y"], api_key="sk-or-v1-test", priority="fastest", repeats=2)
+    assert result["ranking"] == ["a/y", "a/x"]
+    assert result["best_for_priority"] == "a/y"
+    assert mock_run.call_args[1]["repeats"] == 2

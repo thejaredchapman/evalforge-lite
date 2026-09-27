@@ -5,7 +5,9 @@ from collections import deque
 
 from mcp.server.mcpserver import MCPServer
 
+import analysis
 import catalog
+import config
 import gateway
 import grading
 import judge
@@ -71,58 +73,9 @@ def evaluate_prompt(prompt: str, api_key: str = "", creds: dict | None = None,
     return judge.evaluate_prompt(prompt, creds=prepared, backend=judge_backend)
 
 
-def _aggregate_stats(results, model_ids):
-    stats = {
-        m: {
-            "judge_scores": [], "rule_check_results": [], "judge_rationales": [],
-            "costs": [], "latencies": [],
-        }
-        for m in model_ids
-    }
-    for row in results:
-        for model_id, cell in row["cells"].items():
-            if cell.get("blocked") or cell.get("error"):
-                continue
-            if cell.get("judge_score") is not None:
-                stats[model_id]["judge_scores"].append(cell["judge_score"])
-            if cell.get("judge_rationale"):
-                stats[model_id]["judge_rationales"].append(cell["judge_rationale"])
-            for check_result in cell.get("checks") or []:
-                stats[model_id]["rule_check_results"].append(check_result["passed"])
-            stats[model_id]["costs"].append(cell.get("cost_usd", 0.0))
-            stats[model_id]["latencies"].append(cell.get("latency_ms", 0))
-    return stats
-
-
-def _cost_latency_stats(agg_stats):
-    result = {}
-    for model_id, s in agg_stats.items():
-        total_cost = sum(s["costs"])
-        avg_latency = sum(s["latencies"]) / len(s["latencies"]) if s["latencies"] else 0.0
-        result[model_id] = {
-            "total_cost_usd": round(total_cost, 6),
-            "avg_latency_ms": round(avg_latency, 1),
-        }
-    return result
-
-
-def _category_scores_by_model(agg_stats, stats):
-    all_costs = [stats[m]["total_cost_usd"] for m, s in agg_stats.items() if s["costs"]]
-    all_latencies = [stats[m]["avg_latency_ms"] for m, s in agg_stats.items() if s["latencies"]]
-
-    result = {}
-    for model_id, s in agg_stats.items():
-        cost = stats[model_id]["total_cost_usd"] if s["costs"] else None
-        latency = stats[model_id]["avg_latency_ms"] if s["latencies"] else None
-        result[model_id] = grading.category_scores(
-            s["judge_scores"], s["rule_check_results"], cost, all_costs, latency, all_latencies
-        )
-    return result
-
-
 @mcp.tool()
 def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "", creds: dict | None = None,
-                   judge_backend: str = "openrouter") -> dict:
+                   judge_backend: str = "openrouter", priority: str = "balanced", repeats: int = 1) -> dict:
     """Run a set of test-case prompts against a set of models, scoring each response.
 
     Each test case may include an optional "rubric" (scored by an LLM judge) and/or
@@ -131,12 +84,21 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
     Models are "<catalog id>" (OpenRouter) or "<catalog id>@bedrock" / "<catalog id>@vertex";
     pass matching creds ({"openrouter"?, "bedrock"?, "vertex"?}) or a bare OpenRouter api_key.
     judge_backend picks which backend runs the judge and policy gate.
+    At most 4 models. priority (balanced|quality|fastest|cheapest) ranks the results;
+    repeats (1-3) re-sends each prompt for timing accuracy. Returns suggestions (same
+    provider and backend only), advice, ranking, and best_for_priority.
     """
     raw_creds = gateway.normalize_creds(creds, api_key)
     if raw_creds is None:
         return {"error": "Missing required field: creds (or api_key)."}
     if judge_backend not in gateway.BACKENDS:
         return {"error": "Invalid judge_backend."}
+    if len(models) > config.MAX_MODELS:
+        return {"error": f"Pick at most {config.MAX_MODELS} models."}
+    if priority not in grading.PRIORITY_WEIGHTS:
+        return {"error": "Invalid priority."}
+    if isinstance(repeats, bool) or repeats not in (1, 2, 3):
+        return {"error": "repeats must be 1, 2, or 3."}
     prepared, creds_error = gateway.check_run_creds(raw_creds, models, judge_backend)
     if creds_error:
         return {"error": creds_error}
@@ -146,41 +108,15 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
         return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
 
     try:
-        results = runner.run(test_cases, models, creds=prepared, policy_text=_policy_text, judge_backend=judge_backend)
-
-        for row in results:
-            row["best_model"] = grading.best_model_for_test_case(row["cells"])
-
-        agg_stats = _aggregate_stats(results, models)
-        grades = {
-            model_id: grading.grade_model(
-                s["judge_scores"], s["rule_check_results"], s["judge_rationales"]
-            )
-            for model_id, s in agg_stats.items()
-        }
-        stats = _cost_latency_stats(agg_stats)
-        categories = _category_scores_by_model(agg_stats, stats)
-        for model_id in grades:
-            grades[model_id]["categories"] = categories[model_id]
-
-        verdict = {"winner": None, "rationale": "No models were run."}
-        if models:
-            verdict = judge.overall_verdict(
-                {m: {"score": grades[m]["score"], "letter": grades[m]["letter"]} for m in models},
-                creds=prepared,
-                backend=judge_backend,
-            )
+        results = runner.run(test_cases, models, creds=prepared, policy_text=_policy_text,
+                             judge_backend=judge_backend, repeats=repeats)
+        run_result = analysis.build_run_result(results, models, prepared, judge_backend)
     except Exception as e:
         return {"error": scrub.scrub(str(e), raw_creds)}
 
-    run_result = {
-        "run_id": str(uuid.uuid4()),
-        "created_at": time.time(),
-        "results": results,
-        "grades": grades,
-        "stats": stats,
-        "verdict": verdict,
-    }
+    run_result = {"run_id": str(uuid.uuid4()), "created_at": time.time(), **run_result}
+    run_result["ranking"] = grading.rank_targets(run_result["grades"], run_result["stats"], priority)
+    run_result["best_for_priority"] = run_result["ranking"][0] if run_result["ranking"] else None
     _run_history.append(run_result)
     return run_result
 
