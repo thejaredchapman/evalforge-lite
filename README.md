@@ -32,12 +32,15 @@ credentials.
    [Backends](#backends-openrouter-amazon-bedrock-google-vertex-ai) below).
 2. Add a test case: a prompt, and optionally a rubric (scored by an LLM
    judge) and/or rule-based checks (e.g. "contains", "max_length").
-3. Pick two or more models, ideally from different providers, from the
+3. Pick two to four models, ideally from different providers, from the
    frontier list or by browsing providers — click a model's Bedrock/Vertex
-   chip to also run it on that backend.
-4. Click **Run comparison** — you'll get a leaderboard with letter grades,
-   per-model cost/latency, and an overall verdict, plus a per-cell view of
-   every model's actual response.
+   chip to also run it on that backend. (`X` and `X@bedrock` count as two
+   of your four.)
+4. Click **Run comparison** — you'll get a side-by-side comparison and a
+   leaderboard with letter grades, per-model cost/latency, and an overall
+   verdict, plus a per-cell view of every model's actual response. See
+   [Comparing up to 4 models](#comparing-up-to-4-models) below for how to
+   read it.
 5. Download a PDF report or CSV export of the run.
 
 **Heads up before you click Run repeatedly while testing:** it's
@@ -77,6 +80,78 @@ models are only offered in certain regions (e.g. `us-east5`), and Gemini
 preview models may need the `global` region instead of a specific one. If a
 run fails with a routing/availability error, try a different region.
 
+## Comparing up to 4 models
+
+Pick up to 4 models (`X` and `X@bedrock` count as two) and each run shows a
+side-by-side comparison in addition to the leaderboard.
+
+### The four metrics
+
+- **Quality** — the model's overall grade: judge score and rule-check pass
+  rate, blended 70/30 (same score as the leaderboard).
+- **Response time** — how long the full answer took to arrive, scored
+  relative to the other models in *this* run (lower is better).
+- **Speed (tok/s)** — output tokens per second, so a model isn't penalized
+  for writing a longer answer. Also relative to this run. Reasoning models
+  (marked with "≈") report speed that includes hidden reasoning tokens on
+  some providers, so it's approximate.
+- **Cost** — relative total cost across this run's calls (lower is better).
+
+A model with no successful responses (every cell errored or was blocked by
+the policy gate) skips these bars — the column just shows the error/blocked
+count instead.
+
+### What matters most?
+
+The priority selector (Balanced / Best quality / Fastest / Cheapest)
+re-weights quality, response time, speed, and cost and re-ranks the
+side-by-side columns instantly, client-side — no new run. The top column
+gets a "Best for your priority" badge. Missing metrics are excluded and the
+remaining weights are renormalized, so one `None` value doesn't skew the
+score. The same weights drive the downloaded PDF, which shows the priority
+you had selected and its best pick.
+
+### Suggestions
+
+Each column may suggest a same-provider, same-backend sibling model — e.g.
+a faster or cheaper tier from the same provider you already used, never a
+model from another provider or an OpenRouter `~latest` alias, and never a
+model already in your comparison. Rules pick *which* sibling to suggest
+(based on quality, response time/speed, or cost gaps); the judge model then
+writes a short plain-English explanation of the trade-offs, falling back to
+the rule's own one-line reason if that call fails or tries to name a model
+outside the comparison. **This adds one extra judge call per run.**
+
+Click **Try it** on a suggestion to swap that model into your selection
+(it replaces the weak model, keeps your count the same) — it doesn't start
+a new run automatically; click **Run comparison** again to test it.
+
+### Repeat each prompt
+
+Set "Repeat each prompt" to 2x or 3x to re-send each prompt multiple times
+for steadier timing — response time and speed are averaged (with a spread
+shown) across the repeats, while judge scoring and rule checks only run
+once, on the first response. It still counts as a single run against the
+rate limit, but it multiplies the number of model calls (and cost)
+accordingly.
+
+### Cost estimate
+
+Before you run, "Estimated cost" gives a rough total: roughly
+`chars / 4` input tokens plus 500 output tokens per call, times your
+selected models, test cases, and repeats, priced from the catalog
+(Bedrock/Vertex) or OpenRouter's live prices. It excludes judge calls and
+shows "unavailable" for any selected model without pricing data. It
+recalculates whenever you change your selection, test cases, or repeats.
+
+### Judge disclosure
+
+The side-by-side view and PDF both show "Judged by \<model\> via
+\<backend\>". If the judge shares a provider with one of the models you're
+comparing (e.g. an Anthropic judge scoring a Claude model), a note warns
+that scores may lean in that model's favor — for important decisions,
+re-run with a judge from a different provider.
+
 ## MCP server
 
     python mcp_server.py
@@ -113,6 +188,26 @@ the judge backend are always required, and malformed creds for any backend the
 call uses are rejected up front, before the call counts against the rate limit. The
 legacy `api_key` string argument still works and is treated as an
 OpenRouter key (equivalent to `creds={"openrouter": api_key}`).
+
+`run_comparison` also takes `models` (at most 4 — more returns `{"error":
+"Pick at most 4 models."}` before the rate limiter is touched), `priority`
+(`"balanced"` (default) | `"quality"` | `"fastest"` | `"cheapest"`, invalid
+values error), and `repeats` (`1` (default), `2`, or `3`; anything else
+errors) for repeating each prompt for steadier timing. Its result includes
+everything a plain run does plus:
+
+- `suggestions` — per-model same-provider/same-backend suggestion (or
+  `null`) from the rule-based advisor.
+- `advice` — the judge's plain-English explanation of the suggestions and
+  trade-offs (empty string if that extra call failed or produced nothing
+  usable).
+- `ranking` — target ids ordered best-first for the requested `priority`
+  (targets with no successful responses are excluded).
+- `best_for_priority` — the first entry of `ranking`, or `null`.
+- `judge` — `{"backend": ..., "model": ...}`, the backend and resolved
+  model id that scored this run.
+- `bias_note` — a warning string (or `""`) when the judge shares a provider
+  with one of the compared models.
 
 ### Publishing to the official MCP registry
 
@@ -168,9 +263,14 @@ suite needs no API key and makes no network calls.
   before any model is called (upload `.txt`/`.md`/`.pdf` in the web app;
   pass plain text via the `set_policy` MCP tool).
 - Leaderboard with letter grades, a category breakdown (accuracy,
-  rule-check pass rate, cost-efficiency, speed — cost/speed scored
-  relative to the other models in the same run), and colorful charts of
-  those scores in both the web view and the PDF report.
+  rule-check pass rate, cost efficiency, response time, and speed —
+  cost/response time/speed scored relative to the other models in the same
+  run), and colorful charts of those scores in both the web view and the
+  PDF report.
+- Side-by-side comparison of up to 4 models with a "what matters most?"
+  priority selector, same-provider/backend model suggestions, and a
+  pre-run cost estimate — see
+  [Comparing up to 4 models](#comparing-up-to-4-models).
 - Per-prompt best-model recommendation: for each test case, which model
   handled that specific prompt best and why — computed from data already
   collected, no extra LLM call.
