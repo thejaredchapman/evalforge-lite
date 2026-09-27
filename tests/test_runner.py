@@ -144,3 +144,58 @@ def test_judge_backend_is_passed_to_policy_and_judge(mock_call, mock_policy, moc
 
     assert mock_policy.call_args[1]["backend"] == "vertex"
     assert mock_judge.call_args[1]["backend"] == "vertex"
+
+
+def _timed_response(latency_ms, output_tokens, cost=0.001):
+    return {"text": "answer", "latency_ms": latency_ms, "cost_usd": cost, "tokens": 40,
+            "output_tokens": output_tokens}
+
+
+@patch("runner.gateway.call_target")
+def test_cell_reports_tokens_per_sec(mock_call):
+    mock_call.return_value = _timed_response(2000, 100)
+    cell = runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})[0]["cells"]["openai/gpt-5"]
+    assert cell["tokens_per_sec"] == 50.0
+    assert cell["output_tokens"] == 100
+    assert cell["samples"] == 1
+    assert cell["latency_ms"] == 2000
+    assert cell["latency_ms_stdev"] is None
+
+
+@patch("runner.gateway.call_target")
+def test_cell_tokens_per_sec_none_without_output_tokens(mock_call):
+    mock_call.return_value = _timed_response(2000, 0)
+    cell = runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})[0]["cells"]["openai/gpt-5"]
+    assert cell["tokens_per_sec"] is None
+
+
+@patch("runner.judge.llm_judge", return_value={"score": 4, "rationale": "ok"})
+@patch("runner.gateway.call_target")
+def test_repeats_time_every_sample_but_judge_once(mock_call, mock_judge):
+    mock_call.side_effect = [_timed_response(1000, 100), _timed_response(2000, 100), _timed_response(3000, 150)]
+    cell = runner.run([{"prompt": "q", "rubric": "r"}], ["openai/gpt-5"],
+                      creds={"openrouter": "sk-or-v1-test"}, repeats=3)[0]["cells"]["openai/gpt-5"]
+    assert mock_call.call_count == 3
+    assert mock_judge.call_count == 1
+    assert cell["samples"] == 3
+    assert cell["latency_ms"] == 2000.0
+    assert cell["latency_ms_stdev"] == 816.5
+    assert cell["tokens_per_sec"] == round((100.0 + 50.0 + 50.0) / 3, 1)
+    assert cell["cost_usd"] == 0.003
+
+
+@patch("runner.gateway.call_target")
+def test_repeats_use_successful_samples_when_some_fail(mock_call):
+    mock_call.side_effect = [gateway.GatewayError("flaky"), _timed_response(1000, 100)]
+    cell = runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+                      repeats=2)[0]["cells"]["openai/gpt-5"]
+    assert cell["error"] is None
+    assert cell["samples"] == 1
+
+
+@patch("runner.gateway.call_target", side_effect=gateway.GatewayError("down"))
+def test_repeats_all_failing_is_a_cell_error(mock_call):
+    cell = runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+                      repeats=2)[0]["cells"]["openai/gpt-5"]
+    assert cell["error"] == "down"
+    assert mock_call.call_count == 2

@@ -42,10 +42,14 @@ def call_model(model_id, messages, api_key, timeout=60):
     if not isinstance(cost_usd, (int, float)):
         cost_usd = 0.0
     tokens = usage.get("total_tokens", 0)
+    output_tokens = usage.get("completion_tokens", 0)
+    if not isinstance(output_tokens, int):
+        output_tokens = 0
 
     return {
         "text": text,
         "latency_ms": latency_ms,
         "cost_usd": cost_usd,
         "tokens": tokens,
+        "output_tokens": output_tokens,
     }
