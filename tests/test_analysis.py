@@ -58,3 +58,19 @@ def test_no_successful_targets_skips_explainer(mock_verdict, mock_explain):
 def test_judge_model_label_resolves_bedrock_geo():
     assert analysis.judge_model_label("bedrock", {"bedrock": {"region": "eu-west-1", "api_key": "k"}}).startswith("eu.anthropic.")
     assert analysis.judge_model_label("bedrock", {}).startswith("{geo}.")
+
+
+def test_disallowed_terms_keep_shorter_sibling_when_longer_variant_is_allowed():
+    import catalog
+    terms = analysis._disallowed_terms(catalog.load_catalog(), ["openai/gpt-5-mini"], ["GPT-5 Mini"])
+    assert "GPT-5" in terms and "openai/gpt-5" in terms
+    assert "GPT-5 Mini" not in terms and "openai/gpt-5-mini" not in terms
+
+
+@patch("analysis.judge.explain_recommendations", return_value="")
+@patch("analysis.judge.overall_verdict", return_value={"winner": None, "rationale": ""})
+def test_explainer_receives_allowed_terms_and_stats_are_floats(mock_verdict, mock_explain):
+    out = analysis.build_run_result(RESULTS, TARGETS, {"openrouter": "k"}, "openrouter")
+    allowed = mock_explain.call_args[1]["allowed_terms"]
+    assert "anthropic/claude-sonnet-4.5" in allowed and "Claude Haiku 4.5" in allowed
+    assert isinstance(out["stats"]["openai/gpt-5"]["avg_latency_ms"], float)

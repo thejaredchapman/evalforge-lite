@@ -201,6 +201,20 @@ def test_explain_recommendations_unparseable_is_empty(mock_call):
     assert judge.explain_recommendations(_SUMMARY, creds={}) == ""
 
 
+@patch("judge.gateway.call_backend")
+def test_explain_recommendations_allows_longer_allowed_name_containing_disallowed(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"advice": "GPT-5 Mini was fastest."}')
+    assert judge.explain_recommendations(_SUMMARY, creds={}, disallowed_terms=["GPT-5", "openai/gpt-5"],
+                                         allowed_terms=["GPT-5 Mini", "openai/gpt-5-mini"]) == "GPT-5 Mini was fastest."
+
+
+@patch("judge.gateway.call_backend")
+def test_explain_recommendations_blocks_shorter_disallowed_name_next_to_allowed(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"advice": "GPT-5 Mini was fast, but GPT-5 would be better."}')
+    assert judge.explain_recommendations(_SUMMARY, creds={}, disallowed_terms=["GPT-5", "openai/gpt-5"],
+                                         allowed_terms=["GPT-5 Mini", "openai/gpt-5-mini"]) == ""
+
+
 @pytest.mark.parametrize("bad_summary", [
     None,
     {"models": {}, "suggestions": {"x": {"model_id": "y", "name": "z"}}},

@@ -106,7 +106,8 @@ def evaluate_prompt(prompt, creds, backend="openrouter", judge_model=None):
     return {"score": score, "feedback": feedback}
 
 
-def explain_recommendations(summary, creds, backend="openrouter", judge_model=None, disallowed_terms=()):
+def explain_recommendations(summary, creds, backend="openrouter", judge_model=None, disallowed_terms=(),
+                            allowed_terms=()):
     try:
         models_text = "\n".join(f"- {target}: {scores}" for target, scores in summary.get("models", {}).items())
         suggestion_lines = [
@@ -121,7 +122,9 @@ def explain_recommendations(summary, creds, backend="openrouter", judge_model=No
     except (gateway.GatewayError, ValueError, KeyError, TypeError, AttributeError, json.JSONDecodeError):
         return ""
 
-    lowered = advice.lower()
-    if any(term.lower() in lowered for term in disallowed_terms if term):
+    remaining = advice.lower()
+    for term in sorted((t.lower() for t in allowed_terms if t), key=len, reverse=True):
+        remaining = remaining.replace(term, " ")
+    if any(term.lower() in remaining for term in disallowed_terms if term):
         return ""
     return advice

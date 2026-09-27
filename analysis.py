@@ -52,9 +52,9 @@ def _stats(agg):
         rate = _mean(a["rates"])
         stats[target] = {
             "total_cost_usd": round(sum(a["costs"]), 6),
-            "avg_latency_ms": round(latency, 1) if latency is not None else 0.0,
-            "avg_latency_stdev_ms": round(stdev, 1) if stdev is not None else None,
-            "avg_tokens_per_sec": round(rate, 1) if rate is not None else None,
+            "avg_latency_ms": round(float(latency), 1) if latency is not None else 0.0,
+            "avg_latency_stdev_ms": round(float(stdev), 1) if stdev is not None else None,
+            "avg_tokens_per_sec": round(float(rate), 1) if rate is not None else None,
             "ok_cells": a["ok"],
             "error_cells": a["error"],
             "blocked_cells": a["blocked"],
@@ -122,7 +122,7 @@ def _disallowed_terms(catalog_dict, allowed_ids, allowed_names):
         for model in provider["models"]:
             for term in (model["id"], model["name"]):
                 low = term.lower()
-                if low in allowed or any(low in a for a in allowed):
+                if low in allowed:
                     continue
                 terms.append(term)
     return terms
@@ -162,6 +162,7 @@ def build_run_result(results, targets, creds, judge_backend):
         advice = judge.explain_recommendations(
             summary, creds=creds, backend=judge_backend,
             disallowed_terms=_disallowed_terms(catalog_dict, allowed_ids, allowed_names),
+            allowed_terms=[*allowed_ids, *allowed_names],
         )
 
     judge_model = judge_model_label(judge_backend, creds)
