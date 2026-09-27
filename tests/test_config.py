@@ -32,3 +32,7 @@ def test_judge_models_cover_every_backend():
     assert set(config.JUDGE_MODELS) == {"openrouter", "bedrock", "vertex"}
     assert config.JUDGE_MODEL == config.JUDGE_MODELS["openrouter"]
     assert config.JUDGE_MODELS["bedrock"].startswith("{geo}.")
+
+
+def test_max_models_is_four():
+    assert config.MAX_MODELS == 4

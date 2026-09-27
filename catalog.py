@@ -10,6 +10,14 @@ _CACHE_TTL_SECONDS = 300
 _cache = {"data": None, "fetched_at": 0.0}
 
 
+def _pricing(model):
+    pricing = model.get("pricing") or {}
+    try:
+        return {"prompt": float(pricing["prompt"]), "completion": float(pricing["completion"])}
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def load_catalog():
     return config.load_providers()
 
@@ -38,7 +46,7 @@ def fetch_openrouter_models():
         return []
 
     models = [
-        {"id": m["id"], "name": m.get("name", m["id"]), "created": m.get("created", 0)}
+        {"id": m["id"], "name": m.get("name", m["id"]), "created": m.get("created", 0), "pricing": _pricing(m)}
         for m in data.get("data", [])
     ]
     _cache["data"] = models
@@ -76,3 +84,11 @@ def route_for(catalog_dict, model_id, backend):
             if model["id"] == model_id:
                 return (model.get("routes") or {}).get(backend)
     return None
+
+
+def find_model(catalog_dict, model_id):
+    for provider_id, provider in catalog_dict.items():
+        for model in provider["models"]:
+            if model["id"] == model_id:
+                return provider_id, model
+    return None, None

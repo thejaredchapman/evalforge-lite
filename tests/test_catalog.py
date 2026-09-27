@@ -91,8 +91,8 @@ def test_fetch_openrouter_models_returns_id_name_and_created(mock_get):
     result = catalog.fetch_openrouter_models()
 
     assert result == [
-        {"id": "mistralai/mistral-large", "name": "Mistral Large", "created": 1700000000},
-        {"id": "openai/gpt-5", "name": "GPT-5", "created": 1750000000},
+        {"id": "mistralai/mistral-large", "name": "Mistral Large", "created": 1700000000, "pricing": None},
+        {"id": "openai/gpt-5", "name": "GPT-5", "created": 1750000000, "pricing": None},
     ]
     mock_get.assert_called_once_with(catalog.OPENROUTER_MODELS_URL, timeout=10)
 
@@ -105,7 +105,7 @@ def test_fetch_openrouter_models_falls_back_to_id_when_name_missing(mock_get):
 
     result = catalog.fetch_openrouter_models()
 
-    assert result == [{"id": "some/model", "name": "some/model", "created": 1700000000}]
+    assert result == [{"id": "some/model", "name": "some/model", "created": 1700000000, "pricing": None}]
 
 
 @patch("catalog.requests.get")
@@ -148,3 +148,54 @@ def test_fetch_openrouter_models_does_not_cache_failures(mock_get):
     catalog.fetch_openrouter_models()
 
     assert mock_get.call_count == 2
+
+
+EXPECTED_TIERS = {
+    "~openai/gpt-latest": "flagship", "openai/gpt-5": "flagship", "openai/gpt-5-mini": "fast",
+    "openai/gpt-4o": "balanced", "openai/gpt-4o-mini": "fast",
+    "~anthropic/claude-opus-latest": "flagship", "anthropic/claude-opus-4.5": "flagship",
+    "anthropic/claude-sonnet-4.5": "balanced", "anthropic/claude-haiku-4.5": "fast",
+    "~google/gemini-pro-latest": "flagship", "google/gemini-2.5-pro": "flagship",
+    "google/gemini-3.7-flash": "balanced", "google/gemini-2.5-flash": "fast",
+    "meta-llama/llama-4-maverick": "flagship", "meta-llama/llama-3.3-70b-instruct": "balanced",
+    "meta-llama/llama-4-scout": "fast",
+}
+EXPECTED_REASONING = {
+    "~openai/gpt-latest", "openai/gpt-5", "openai/gpt-5-mini", "google/gemini-2.5-pro",
+    "google/gemini-2.5-flash", "google/gemini-3.7-flash", "~google/gemini-pro-latest",
+}
+
+
+def test_every_curated_model_has_its_expected_tier():
+    cat = catalog.load_catalog()
+    tiers = {m["id"]: m.get("tier") for p in cat.values() for m in p["models"]}
+    assert tiers == EXPECTED_TIERS
+
+
+def test_reasoning_flags():
+    cat = catalog.load_catalog()
+    flagged = {m["id"] for p in cat.values() for m in p["models"] if m.get("reasoning")}
+    assert flagged == EXPECTED_REASONING
+
+
+def test_find_model():
+    cat = catalog.load_catalog()
+    provider_id, model = catalog.find_model(cat, "anthropic/claude-haiku-4.5")
+    assert provider_id == "anthropic" and model["name"] == "Claude Haiku 4.5"
+    assert catalog.find_model(cat, "nope/nope") == (None, None)
+
+
+@patch("catalog.requests.get")
+def test_fetch_openrouter_models_keeps_pricing(mock_get):
+    catalog._cache["data"] = None
+    mock_get.return_value.raise_for_status.return_value = None
+    mock_get.return_value.json.return_value = {"data": [
+        {"id": "a/priced", "name": "Priced", "created": 1, "pricing": {"prompt": "0.000001", "completion": "0.000002"}},
+        {"id": "a/free-form", "name": "Odd", "created": 2, "pricing": {"prompt": "n/a"}},
+        {"id": "a/none", "name": "None", "created": 3},
+    ]}
+    models = {m["id"]: m for m in catalog.fetch_openrouter_models()}
+    catalog._cache["data"] = None
+    assert models["a/priced"]["pricing"] == {"prompt": 0.000001, "completion": 0.000002}
+    assert models["a/free-form"]["pricing"] is None
+    assert models["a/none"]["pricing"] is None

@@ -8,6 +8,7 @@ JUDGE_MODELS = {
     "vertex": os.environ.get("VERTEX_JUDGE_MODEL", "google/gemini-2.5-flash"),
 }
 JUDGE_MODEL = JUDGE_MODELS["openrouter"]
+MAX_MODELS = 4
 
 _DATA_DIR = Path(__file__).parent / "data"
 _PROVIDERS_PATH = _DATA_DIR / "providers.json"
