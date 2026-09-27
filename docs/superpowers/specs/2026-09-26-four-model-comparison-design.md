@@ -82,8 +82,9 @@ Tier order: `fast` (0) < `balanced` (1) < `flagship` (2).
   entry. So a Bedrock target only suggests Bedrock-routed siblings. Models not in the catalog (custom
   ids) → `None`.
 - **Weakness** (using that model's category scores; `None` scores are ignored):
-  1. `quality_weak`: overall `grade.score` < 70, or it is the lowest `grade.score` in the run by
-     ≥ 10 points → want a **higher** tier.
+  1. `quality_weak`: overall `grade.score` < 70, or it is ≥ 15 points below the **best** `grade.score`
+     in the run → want a **higher** tier. (If `grade.score` is `None` — no rubric and no checks — this
+     rule is skipped, and so is rule 3.)
   2. else `latency_weak`: `response_time` ≤ 40 or `throughput` ≤ 40 (i.e. among the slowest in this
      run) → want a **lower** (faster) tier.
   3. else `cost_weak`: `cost_efficiency` ≤ 40 and `grade.score` ≥ 85 → want a **lower** (cheaper) tier.
