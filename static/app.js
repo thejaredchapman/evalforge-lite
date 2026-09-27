@@ -417,8 +417,13 @@ function updateSelectionMeta() {
     return;
   }
   const { total, unpriced } = estimateCost();
-  let text = `· Estimated cost: ~$${total.toFixed(4)} (rough; excludes judge calls)`;
-  if (unpriced.length) text += ` · unavailable for ${unpriced.length} model(s)`;
+  let text;
+  if (unpriced.length === state.selectedModels.size) {
+    text = `· Estimated cost: unavailable for ${unpriced.length} model(s)`;
+  } else {
+    text = `· Estimated cost: ~$${total.toFixed(4)} (rough; excludes judge calls)`;
+    if (unpriced.length) text += ` · unavailable for ${unpriced.length} model(s)`;
+  }
   el.textContent = text;
 }
 
@@ -718,6 +723,10 @@ function tryIt(oldTarget, newTarget) {
   }
   state.selectedModels.delete(oldTarget);
   state.selectedModels.add(newTarget);
+  if (state.customModels.includes(oldTarget)) {
+    state.customModels = state.customModels.filter((id) => id !== oldTarget);
+    renderCustomModels();
+  }
   syncSelectionVisuals();
   updateSelectionMeta();
   status.textContent = `Swapped ${oldTarget} → ${newTarget}. Click Run comparison to test it.`;
