@@ -51,8 +51,17 @@ def _grade_fill(letter):
     return _GRADE_FILL_COLORS.get(letter[0], (200, 200, 200))
 
 
+_PDF_REPLACEMENTS = {
+    "—": "-", "–": "-", "−": "-", "‘": "'", "’": "'", "“": '"', "”": '"',
+    "…": "...", "≈": "~", "•": "*", " ": " ", "→": "->",
+}
+
+
 def _pdf_safe(text):
-    return (text or "").replace("—", "-").replace("≈", "~")
+    text = "" if text is None else str(text)
+    for src, dst in _PDF_REPLACEMENTS.items():
+        text = text.replace(src, dst)
+    return text.encode("latin-1", "replace").decode("latin-1")
 
 
 def _is_reasoning(target):
@@ -117,7 +126,7 @@ def build_pdf(run_result, priority=None):
         pdf.set_font("Courier", "", 9)
         pdf.set_text_color(120, 120, 120)
         backend_label = gateway.BACKEND_LABELS.get(judge_info.get("backend"), judge_info.get("backend"))
-        pdf.cell(0, 6, f"Judged by {judge_info.get('model')} via {backend_label}", **_NEW_LINE)
+        pdf.cell(0, 6, _pdf_safe(f"Judged by {judge_info.get('model')} via {backend_label}"), **_NEW_LINE)
         pdf.set_text_color(0, 0, 0)
 
     if priority:
@@ -125,7 +134,9 @@ def build_pdf(run_result, priority=None):
         best_pick = ranking[0] if ranking else "n/a"
         pdf.set_font("Courier", "", 9)
         pdf.set_text_color(120, 120, 120)
-        pdf.cell(0, 6, f"Priority: {grading.PRIORITY_LABELS[priority]} - best pick: {best_pick}", **_NEW_LINE)
+        pdf.cell(
+            0, 6, _pdf_safe(f"Priority: {grading.PRIORITY_LABELS[priority]} - best pick: {best_pick}"), **_NEW_LINE
+        )
         pdf.set_text_color(0, 0, 0)
     pdf.ln(2)
 
@@ -133,8 +144,9 @@ def build_pdf(run_result, priority=None):
     pdf.set_font("Courier", "B", 12)
     pdf.cell(0, 8, "Overall Verdict", **_NEW_LINE)
     pdf.set_font("Courier", "", 10)
-    winner = verdict.get("winner") or "No verdict available"
-    pdf.multi_cell(0, 6, f"Winner: {winner}\n{verdict.get('rationale', '')}", **_NEW_LINE)
+    winner = _pdf_safe(verdict.get("winner") or "No verdict available")
+    rationale = _pdf_safe(verdict.get("rationale", ""))
+    pdf.multi_cell(0, 6, f"Winner: {winner}\n{rationale}", **_NEW_LINE)
     pdf.ln(4)
 
     pdf.set_font("Courier", "B", 12)
@@ -155,7 +167,7 @@ def build_pdf(run_result, priority=None):
             model_stats = stats.get(model_id) or {}
             letter = grade.get("letter")
 
-            pdf.cell(col_widths[0], 7, model_id, border=1)
+            pdf.cell(col_widths[0], 7, _pdf_safe(model_id), border=1)
 
             fill = _grade_fill(letter)
             pdf.set_fill_color(*fill)
@@ -195,7 +207,7 @@ def build_pdf(run_result, priority=None):
         pdf.set_font("Courier", "", 9)
         for model_id, grade in grades.items():
             categories = grade.get("categories") or {}
-            pdf.cell(cat_col_widths[0], 7, model_id, border=1)
+            pdf.cell(cat_col_widths[0], 7, _pdf_safe(model_id), border=1)
             for width, key in zip(cat_col_widths[1:], _CATEGORY_COLORS.keys()):
                 value = categories.get(key)
                 pdf.cell(width, 7, f"{value:.0f}" if value is not None else "N/A", border=1, align="C")
@@ -217,12 +229,13 @@ def build_pdf(run_result, priority=None):
         for target, suggestion in suggestions.items():
             if target not in stats:
                 continue
+            target_label = _pdf_safe(target)
             if suggestion:
-                pdf.multi_cell(
-                    0, 5, f"{target}: try {suggestion['name']} - {_pdf_safe(suggestion['reason'])}", **_NEW_LINE
-                )
+                name = _pdf_safe(suggestion["name"])
+                reason = _pdf_safe(suggestion["reason"])
+                pdf.multi_cell(0, 5, f"{target_label}: try {name} - {reason}", **_NEW_LINE)
             else:
-                pdf.multi_cell(0, 5, f"{target}: good fit - no better option in this catalog", **_NEW_LINE)
+                pdf.multi_cell(0, 5, f"{target_label}: good fit - no better option in this catalog", **_NEW_LINE)
 
         if advice:
             pdf.ln(2)
@@ -233,37 +246,49 @@ def build_pdf(run_result, priority=None):
             pdf.set_text_color(120, 120, 120)
             pdf.multi_cell(0, 5, _pdf_safe(bias_note), **_NEW_LINE)
             pdf.set_text_color(0, 0, 0)
+        pdf.ln(2)
 
-        if any(_is_reasoning(target) for target in grades):
-            pdf.set_font("Courier", "", 8)
-            pdf.set_text_color(120, 120, 120)
-            pdf.multi_cell(0, 5, "~ = approximate: includes hidden reasoning tokens on some providers.", **_NEW_LINE)
-            pdf.set_text_color(0, 0, 0)
+    # Shown whenever a "~" (approximate tok/s) prefix could actually appear in the
+    # Leaderboard above, independent of whether a Suggestions section rendered.
+    if any(
+        _is_reasoning(target) for target in grades
+        if (stats.get(target) or {}).get("avg_tokens_per_sec") is not None
+    ):
+        pdf.set_font("Courier", "", 8)
+        pdf.set_text_color(120, 120, 120)
+        pdf.multi_cell(0, 5, "~ = approximate: includes hidden reasoning tokens on some providers.", **_NEW_LINE)
+        pdf.set_text_color(0, 0, 0)
         pdf.ln(2)
 
     pdf.set_font("Courier", "B", 12)
     pdf.cell(0, 8, "Test Cases", **_NEW_LINE)
     for row in run_result.get("results") or []:
         pdf.set_font("Courier", "B", 10)
-        pdf.multi_cell(0, 6, f"Prompt: {row['test_case']['prompt']}", **_NEW_LINE)
+        pdf.multi_cell(0, 6, _pdf_safe(f"Prompt: {row['test_case']['prompt']}"), **_NEW_LINE)
 
         best_model = row.get("best_model")
         if best_model and best_model.get("model_id"):
             pdf.set_font("Courier", "", 9)
             pdf.set_text_color(30, 142, 62)
-            pdf.multi_cell(0, 5, f"  Recommended: {best_model['model_id']} - {best_model['reason']}", **_NEW_LINE)
+            best_model_id = _pdf_safe(best_model["model_id"])
+            best_model_reason = _pdf_safe(best_model["reason"])
+            pdf.multi_cell(0, 5, f"  Recommended: {best_model_id} - {best_model_reason}", **_NEW_LINE)
             pdf.set_text_color(0, 0, 0)
 
         pdf.set_font("Courier", "", 9)
         for model_id, cell in row["cells"].items():
+            safe_model_id = _pdf_safe(model_id)
             if cell.get("blocked"):
-                pdf.multi_cell(0, 5, f"  [{model_id}] BLOCKED - {cell.get('policy_clause')}: {cell.get('policy_reason')}", **_NEW_LINE)
+                policy_clause = _pdf_safe(cell.get("policy_clause"))
+                policy_reason = _pdf_safe(cell.get("policy_reason"))
+                pdf.multi_cell(0, 5, f"  [{safe_model_id}] BLOCKED - {policy_clause}: {policy_reason}", **_NEW_LINE)
             elif cell.get("error"):
-                pdf.multi_cell(0, 5, f"  [{model_id}] ERROR: {cell.get('error')}", **_NEW_LINE)
+                pdf.multi_cell(0, 5, f"  [{safe_model_id}] ERROR: {_pdf_safe(cell.get('error'))}", **_NEW_LINE)
             else:
-                pdf.multi_cell(0, 5, f"  [{model_id}] {cell.get('response_text')}", **_NEW_LINE)
+                pdf.multi_cell(0, 5, f"  [{safe_model_id}] {_pdf_safe(cell.get('response_text'))}", **_NEW_LINE)
                 if cell.get("judge_score") is not None:
-                    pdf.multi_cell(0, 5, f"    judge score: {cell['judge_score']}/5 - {cell.get('judge_rationale')}", **_NEW_LINE)
+                    judge_rationale = _pdf_safe(cell.get("judge_rationale"))
+                    pdf.multi_cell(0, 5, f"    judge score: {cell['judge_score']}/5 - {judge_rationale}", **_NEW_LINE)
         pdf.ln(2)
 
     return bytes(pdf.output())

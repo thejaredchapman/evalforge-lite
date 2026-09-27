@@ -204,3 +204,32 @@ def test_build_csv_includes_tokens_per_sec():
     first_cell = next(iter(run["results"][0]["cells"].values()))
     first_cell["tokens_per_sec"] = 42.5
     assert "42.5" in report.build_csv(run)
+
+
+def test_pdf_safe_normalizes_unicode_punctuation_and_replaces_unencodable_chars():
+    assert report._pdf_safe("It’s “great” — ≈5 … \U0001F680") == "It's \"great\" - ~5 ... ?"
+    assert report._pdf_safe(None) == ""
+
+
+def test_pdf_sanitizes_unicode_in_advice_response_text_and_verdict_rationale():
+    run = _sample_run_result()
+    run["advice"] = "It’s clearly the best choice \U0001F680"
+    run["verdict"]["rationale"] = "Best pick — clearly superior."
+    first_cell = next(iter(run["results"][0]["cells"].values()))
+    first_cell["response_text"] = "It’s great \U0001F680"
+
+    pdf_bytes = report.build_pdf(run)
+
+    text = _pdf_text(pdf_bytes)
+    assert "It's clearly the best choice" in text
+
+
+def test_pdf_shows_approx_tokens_per_sec_and_reasoning_footnote():
+    run = _sample_run_result(include_categories=True, include_stats=True)
+    run["stats"]["openai/gpt-5"]["avg_tokens_per_sec"] = 42.0
+
+    pdf_bytes = report.build_pdf(run)
+
+    text = _pdf_text(pdf_bytes)
+    assert "~42" in text
+    assert "~ = approximate" in text
