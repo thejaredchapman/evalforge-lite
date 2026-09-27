@@ -442,7 +442,16 @@ def test_api_run_rejects_more_than_four_models():
     assert all(len(v) == 0 for v in limiter._attempts.values())
 
 
-@pytest.mark.parametrize("repeats", [0, 4, "2", True])
+@pytest.mark.parametrize("bad_model", ["", "   "])
+def test_api_run_rejects_empty_string_model_id(bad_model):
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q"}], "models": ["openai/gpt-5", bad_model], "api_key": "sk-or-v1-test"})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Model ids must be non-empty strings."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+@pytest.mark.parametrize("repeats", [0, 4, "2", True, 2.0])
 def test_api_run_rejects_bad_repeats(repeats):
     resp = _client().post("/api/run", json={
         "test_cases": [], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-test", "repeats": repeats})

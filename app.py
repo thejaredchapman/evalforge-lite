@@ -115,18 +115,20 @@ def api_policy():
 def _validate_run_body(body):
     if not isinstance(body, dict):
         return "Request body must be JSON."
+    if not isinstance(body.get("models"), list) or not all(isinstance(m, str) for m in body["models"]):
+        return "Missing required field: models."
+    if any(not m.strip() for m in body["models"]):
+        return "Model ids must be non-empty strings."
     if gateway.normalize_creds(body.get("creds"), body.get("api_key")) is None:
         return "Missing required field: creds (or api_key)."
     if body.get("judge_backend", "openrouter") not in gateway.BACKENDS:
         return "Invalid judge_backend."
     if not isinstance(body.get("test_cases"), list):
         return "Missing required field: test_cases."
-    if not isinstance(body.get("models"), list) or not all(isinstance(m, str) for m in body["models"]):
-        return "Missing required field: models."
     if len(body["models"]) > config.MAX_MODELS:
         return f"Pick at most {config.MAX_MODELS} models."
     repeats = body.get("repeats", 1)
-    if isinstance(repeats, bool) or repeats not in (1, 2, 3):
+    if type(repeats) is not int or repeats not in (1, 2, 3):
         return "repeats must be 1, 2, or 3."
     return None
 

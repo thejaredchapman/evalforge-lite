@@ -1,4 +1,5 @@
 import base64
+import io
 from unittest.mock import patch
 
 import limiter
@@ -154,6 +155,26 @@ def test_get_report_after_a_run_returns_pdf_base64(mock_verdict, mock_run):
     assert pdf_bytes.startswith(b"%PDF")
 
 
+@patch("mcp_server.analysis.build_run_result")
+@patch("mcp_server.runner.run", return_value=[])
+def test_get_report_after_priority_run_includes_priority_line(mock_run, mock_build):
+    mock_build.return_value = {
+        "results": [], "verdict": {"winner": None, "rationale": ""}, "suggestions": {}, "advice": "",
+        "judge": {"backend": "openrouter", "model": "m"}, "bias_note": "",
+        "grades": {"a/x": {"score": 95, "categories": {"response_time": 0, "throughput": 0, "cost_efficiency": 0}},
+                   "a/y": {"score": 70, "categories": {"response_time": 100, "throughput": 100, "cost_efficiency": 100}}},
+        "stats": {"a/x": {"ok_cells": 1, "avg_latency_ms": 900}, "a/y": {"ok_cells": 1, "avg_latency_ms": 100}},
+    }
+    mcp_server.run_comparison(test_cases=[], models=["a/x", "a/y"], api_key="sk-or-v1-test", priority="fastest")
+
+    result = mcp_server.get_report()
+    import pdfplumber
+    pdf_bytes = base64.b64decode(result["pdf_base64"])
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    assert "Priority:" in text
+
+
 @patch("mcp_server.runner.run")
 @patch("mcp_server.judge.overall_verdict")
 def test_get_report_honors_run_id(mock_verdict, mock_run):
@@ -296,6 +317,13 @@ def test_run_comparison_rejects_more_than_four_models():
 def test_run_comparison_rejects_invalid_priority_and_repeats():
     assert mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test", priority="vibes") == {"error": "Invalid priority."}
     assert mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test", repeats=5) == {"error": "repeats must be 1, 2, or 3."}
+    assert mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test", repeats=2.0) == {"error": "repeats must be 1, 2, or 3."}
+
+
+def test_run_comparison_rejects_empty_string_model_id():
+    result = mcp_server.run_comparison(test_cases=[], models=["openai/gpt-5", "   "], api_key="sk-or-v1-test")
+    assert result == {"error": "Model ids must be non-empty strings."}
+    assert all(len(v) == 0 for v in limiter._attempts.values())
 
 
 @patch("mcp_server.analysis.build_run_result")

@@ -88,6 +88,8 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
     repeats (1-3) re-sends each prompt for timing accuracy. Returns suggestions (same
     provider and backend only), advice, ranking, and best_for_priority.
     """
+    if not isinstance(models, list) or any(not isinstance(m, str) or not m.strip() for m in models):
+        return {"error": "Model ids must be non-empty strings."}
     raw_creds = gateway.normalize_creds(creds, api_key)
     if raw_creds is None:
         return {"error": "Missing required field: creds (or api_key)."}
@@ -97,7 +99,7 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
         return {"error": f"Pick at most {config.MAX_MODELS} models."}
     if priority not in grading.PRIORITY_WEIGHTS:
         return {"error": "Invalid priority."}
-    if isinstance(repeats, bool) or repeats not in (1, 2, 3):
+    if type(repeats) is not int or repeats not in (1, 2, 3):
         return {"error": "repeats must be 1, 2, or 3."}
     prepared, creds_error = gateway.check_run_creds(raw_creds, models, judge_backend)
     if creds_error:
@@ -115,6 +117,7 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
         return {"error": scrub.scrub(str(e), raw_creds)}
 
     run_result = {"run_id": str(uuid.uuid4()), "created_at": time.time(), **run_result}
+    run_result["priority"] = priority
     run_result["ranking"] = grading.rank_targets(run_result["grades"], run_result["stats"], priority)
     run_result["best_for_priority"] = run_result["ranking"][0] if run_result["ranking"] else None
     _run_history.append(run_result)
@@ -140,12 +143,20 @@ def _find_run(run_id):
 
 
 @mcp.tool()
-def get_report(run_id: str | None = None) -> dict:
-    """Get a PDF report (base64-encoded) for a run. Defaults to the most recent run."""
+def get_report(run_id: str | None = None, priority: str | None = None) -> dict:
+    """Get a PDF report (base64-encoded) for a run. Defaults to the most recent run.
+
+    priority (balanced|quality|fastest|cheapest), if given, overrides the priority the
+    run was made with for the report's priority/best-pick line; otherwise the run's own
+    priority (from run_comparison) is used.
+    """
     run_result = _find_run(run_id)
     if not run_result:
         return {"error": "no_run_available"}
-    pdf_bytes = report.build_pdf(run_result)
+    if priority is not None and priority not in grading.PRIORITY_WEIGHTS:
+        return {"error": "Invalid priority."}
+    effective_priority = priority if priority is not None else run_result.get("priority")
+    pdf_bytes = report.build_pdf(run_result, priority=effective_priority)
     return {"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii")}
 
 
