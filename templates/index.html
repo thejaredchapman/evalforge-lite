@@ -128,6 +128,23 @@
   </section>
 
   <section id="run-section">
+    <div class="run-options">
+      <label for="priority">What matters most?</label>
+      <select id="priority">
+        <option value="balanced" selected>Balanced</option>
+        <option value="quality">Best quality</option>
+        <option value="fastest">Fastest</option>
+        <option value="cheapest">Cheapest</option>
+      </select>
+      <label for="repeats">Repeat each prompt</label>
+      <select id="repeats" aria-describedby="repeats-hint">
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="3">3×</option>
+      </select>
+      <span id="repeats-hint" class="status-text">More accurate timing; multiplies model calls and cost.</span>
+    </div>
+    <p class="run-meta"><span id="selection-count">Selected 0 / 4</span> <span id="cost-estimate" class="status-text"></span></p>
     <button id="run-button">Run comparison</button>
     <span id="run-status" class="status-text"></span>
   </section>
@@ -140,6 +157,24 @@
   <section id="results-section" hidden>
     <h2>Overall verdict</h2>
     <div id="verdict-banner" class="card"></div>
+
+    <h2>Side-by-side</h2>
+    <p id="judge-line" class="status-text"></p>
+    <div id="compare-grid" class="compare-grid"></div>
+    <div id="advice-box" class="card advice-box" hidden></div>
+    <details class="card help-box">
+      <summary>How to read this</summary>
+      <ul>
+        <li><strong>Chat and interactive UIs</strong> — prioritize <em>Response time</em> (how long until the full answer arrives).</li>
+        <li><strong>Long outputs</strong> (reports, code) — prioritize <em>Speed</em> (tokens per second).</li>
+        <li><strong>Accuracy-critical work</strong> — choose <em>Best quality</em>.</li>
+        <li>If two models are within ~5 quality points, prefer the faster or cheaper one.</li>
+        <li>Run 3+ representative prompts before deciding — one prompt is noisy. Use "Repeat each prompt" for steadier timing.</li>
+        <li>Suggestions only name models from the <em>same provider</em> on the backend you used.</li>
+        <li>A judge can favor its own model family — for important decisions, re-run with a judge from a different provider.</li>
+        <li>"≈" speeds include hidden reasoning tokens on some providers and are approximate.</li>
+      </ul>
+    </details>
 
     <h2>Leaderboard</h2>
     <div id="leaderboard" class="card leaderboard"></div>

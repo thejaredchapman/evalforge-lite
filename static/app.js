@@ -21,6 +21,24 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 }
 
+function maxModels() {
+  return (state.catalog && state.catalog.max_models) || 4;
+}
+
+function capMessage() {
+  return `You can compare up to ${maxModels()} models — deselect one first.`;
+}
+
+function atCap() {
+  return state.selectedModels.size >= maxModels();
+}
+
+function syncSelectionVisuals() {
+  document.querySelectorAll(".model-badge[data-target], .backend-chip[data-target]").forEach((el) => {
+    el.classList.toggle("selected", state.selectedModels.has(el.dataset.target));
+  });
+}
+
 function fieldValue(id) {
   return document.getElementById(id).value.trim();
 }
@@ -175,6 +193,7 @@ async function loadCatalogAndModels() {
   renderFrontier(catalogData.frontier);
   renderProviders(catalogData.providers);
   populateModelsDatalist(state.allModels);
+  updateSelectionMeta();
 }
 
 function populateModelsDatalist(models) {
@@ -245,6 +264,7 @@ function modelBadge(model, color) {
   el.textContent = model.name;
   el.style.setProperty("--accent", color);
   el.dataset.modelId = model.id;
+  el.dataset.target = model.id;
   el.title = "Run via OpenRouter";
   el.addEventListener("click", () => toggleModel(model.id, el));
 
@@ -261,6 +281,7 @@ function modelBadge(model, color) {
     chip.className = "backend-chip";
     chip.textContent = backend === "bedrock" ? "Bedrock" : "Vertex";
     chip.title = `Also run via ${BACKEND_LABELS[backend]}`;
+    chip.dataset.target = `${model.id}@${backend}`;
     chip.addEventListener("click", () => toggleBackendTarget(`${model.id}@${backend}`, chip));
     chips.appendChild(chip);
   });
@@ -271,20 +292,30 @@ function modelBadge(model, color) {
 function toggleBackendTarget(target, chip) {
   if (state.selectedModels.has(target)) {
     state.selectedModels.delete(target);
-    chip.classList.remove("selected");
   } else {
+    if (atCap()) {
+      document.getElementById("run-status").textContent = capMessage();
+      return;
+    }
     state.selectedModels.add(target);
-    chip.classList.add("selected");
   }
+  syncSelectionVisuals();
+  updateSelectionMeta();
 }
 
 async function toggleModel(modelId, el) {
   if (state.selectedModels.has(modelId)) {
     state.selectedModels.delete(modelId);
-    el.classList.remove("selected");
+    syncSelectionVisuals();
+    updateSelectionMeta();
   } else {
+    if (atCap()) {
+      document.getElementById("run-status").textContent = capMessage();
+      return;
+    }
     state.selectedModels.add(modelId);
-    el.classList.add("selected");
+    syncSelectionVisuals();
+    updateSelectionMeta();
     const resp = await fetch(`/api/suggest?model_id=${encodeURIComponent(modelId)}`);
     const data = await resp.json();
     if (data.suggestions.length) {
@@ -298,16 +329,22 @@ function addCustomModel() {
   const input = document.getElementById("custom-model-input");
   const modelId = input.value.trim();
   if (!modelId || state.selectedModels.has(modelId)) return;
+  if (atCap()) {
+    document.getElementById("run-status").textContent = capMessage();
+    return;
+  }
   state.selectedModels.add(modelId);
   state.customModels.push(modelId);
   input.value = "";
   renderCustomModels();
+  updateSelectionMeta();
 }
 
 function removeCustomModel(modelId) {
   state.selectedModels.delete(modelId);
   state.customModels = state.customModels.filter((id) => id !== modelId);
   renderCustomModels();
+  updateSelectionMeta();
 }
 
 function renderCustomModels() {
@@ -327,9 +364,68 @@ function renderCustomModels() {
   });
 }
 
+const OUTPUT_TOKENS_GUESS = 500;
+
+function catalogModel(modelId) {
+  if (!state.catalog) return null;
+  for (const provider of Object.values(state.catalog.providers)) {
+    const model = provider.models.find((m) => m.id === modelId);
+    if (model) return model;
+  }
+  return null;
+}
+
+function splitTarget(target) {
+  const backend = targetBackend(target);
+  return { backend, modelId: backend === "openrouter" ? target : target.slice(0, target.lastIndexOf("@")) };
+}
+
+function priceForTarget(target) {
+  const { backend, modelId } = splitTarget(target);
+  if (backend !== "openrouter") {
+    const model = catalogModel(modelId);
+    const price = model && model.routes && model.routes[backend] && model.routes[backend].price;
+    return price ? { input: price.input_per_m / 1e6, output: price.output_per_m / 1e6 } : null;
+  }
+  const live = state.allModels.find((m) => m.id === modelId);
+  return live && live.pricing ? { input: live.pricing.prompt, output: live.pricing.completion } : null;
+}
+
+function estimateCost() {
+  const repeats = Number(document.getElementById("repeats").value || 1);
+  let total = 0;
+  const unpriced = [];
+  state.selectedModels.forEach((target) => {
+    const price = priceForTarget(target);
+    if (!price) {
+      unpriced.push(target);
+      return;
+    }
+    state.testCases.forEach((tc) => {
+      const inputTokens = Math.ceil((tc.prompt || "").length / 4);
+      total += repeats * (inputTokens * price.input + OUTPUT_TOKENS_GUESS * price.output);
+    });
+  });
+  return { total, unpriced };
+}
+
+function updateSelectionMeta() {
+  document.getElementById("selection-count").textContent = `Selected ${state.selectedModels.size} / ${maxModels()}`;
+  const el = document.getElementById("cost-estimate");
+  if (state.selectedModels.size === 0) {
+    el.textContent = "";
+    return;
+  }
+  const { total, unpriced } = estimateCost();
+  let text = `· Estimated cost: ~$${total.toFixed(4)} (rough; excludes judge calls)`;
+  if (unpriced.length) text += ` · unavailable for ${unpriced.length} model(s)`;
+  el.textContent = text;
+}
+
 function addTestCase() {
   state.testCases.push({ prompt: "", rubric: "" });
   renderTestCases();
+  updateSelectionMeta();
 }
 
 async function evaluatePrompt(idx) {
@@ -381,6 +477,7 @@ function renderTestCases() {
     el.addEventListener("input", (e) => {
       const idx = Number(e.target.dataset.idx);
       state.testCases[idx][e.target.dataset.field] = e.target.value;
+      updateSelectionMeta();
     });
   });
   container.querySelectorAll(".evaluate-prompt-btn").forEach((el) => {
@@ -402,6 +499,10 @@ async function runComparison() {
     runStatus.textContent = "Pick at least one model.";
     return;
   }
+  if (state.selectedModels.size > maxModels()) {
+    runStatus.textContent = capMessage();
+    return;
+  }
   const creds = buildCreds();
   const missing = missingBackends(creds);
   if (missing.length) {
@@ -418,6 +519,7 @@ async function runComparison() {
       models: Array.from(state.selectedModels),
       creds,
       judge_backend: judgeBackend(),
+      repeats: Number(document.getElementById("repeats").value || 1),
     }),
   });
 
@@ -467,11 +569,166 @@ function showRun(runId) {
   renderResults(run);
 }
 
+function rawWeightedScore(grade, priority) {
+  const weights = state.catalog.priority_weights[priority];
+  const cats = grade.categories || {};
+  const values = { quality: grade.score, response_time: cats.response_time, throughput: cats.throughput, cost_efficiency: cats.cost_efficiency };
+  let total = 0;
+  let sum = 0;
+  Object.entries(weights).forEach(([key, w]) => {
+    if (w > 0 && values[key] !== null && values[key] !== undefined) {
+      total += w;
+      sum += values[key] * w;
+    }
+  });
+  return total ? sum / total : null;
+}
+
+function rankTargets(data, priority) {
+  const scored = Object.keys(data.grades).filter((t) => {
+    const s = data.stats[t] || {};
+    return (s.ok_cells || 0) > 0 && rawWeightedScore(data.grades[t], priority) !== null;
+  });
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  return scored.sort((a, b) => {
+    const diff = rawWeightedScore(data.grades[b], priority) - rawWeightedScore(data.grades[a], priority);
+    if (diff !== 0) return diff;
+    const qa = data.grades[a].score ?? -1;
+    const qb = data.grades[b].score ?? -1;
+    if (qa !== qb) return qb - qa;
+    const la = data.stats[a].avg_latency_ms ?? Infinity;
+    const lb = data.stats[b].avg_latency_ms ?? Infinity;
+    if (la !== lb) return la - lb;
+    return cmp(a, b);
+  });
+}
+
+const COMPARE_METRICS = [["quality", "Quality"], ["response_time", "Response time"], ["throughput", "Speed"], ["cost_efficiency", "Cost"]];
+
+function metricRow(label, value) {
+  const wrap = document.createElement("div");
+  wrap.className = "metric";
+  const text = value === null || value === undefined ? `${label} n/a` : `${label} ${Math.round(value)}/100`;
+  wrap.textContent = text;
+  const bar = document.createElement("div");
+  bar.className = "metric-bar";
+  bar.setAttribute("role", "img");
+  bar.setAttribute("aria-label", text);
+  const fill = document.createElement("div");
+  fill.className = "metric-fill";
+  fill.style.width = `${value === null || value === undefined ? 0 : Math.max(0, Math.min(100, value))}%`;
+  bar.appendChild(fill);
+  wrap.appendChild(bar);
+  return wrap;
+}
+
+function renderCompareGrid(data) {
+  const grid = document.getElementById("compare-grid");
+  grid.innerHTML = "";
+  const priority = document.getElementById("priority").value;
+  const ranking = rankTargets(data, priority);
+  const best = ranking.length > 1 ? ranking[0] : null;
+
+  Object.entries(data.grades).forEach(([target, grade]) => {
+    const stats = data.stats[target] || {};
+    const cats = grade.categories || {};
+    const col = document.createElement("div");
+    col.className = "compare-col" + (target === best ? " best" : "");
+
+    if (target === best) {
+      const badge = document.createElement("span");
+      badge.className = "best-badge";
+      badge.textContent = `Best for ${state.catalog.priority_labels[priority]}`;
+      col.appendChild(badge);
+    }
+    const title = document.createElement("p");
+    title.className = "compare-title";
+    title.textContent = `${target} · ${grade.letter || "N/A"}`;
+    col.appendChild(title);
+
+    if ((stats.ok_cells || 0) === 0) {
+      const none = document.createElement("p");
+      none.className = "status-fail";
+      none.textContent = `No successful responses (${stats.error_cells || 0} errors, ${stats.blocked_cells || 0} blocked)`;
+      col.appendChild(none);
+      grid.appendChild(col);
+      return;
+    }
+
+    COMPARE_METRICS.forEach(([key, label]) => col.appendChild(metricRow(label, key === "quality" ? grade.score : cats[key])));
+
+    const model = catalogModel(splitTarget(target).modelId);
+    const approx = model && model.reasoning ? "≈ " : "";
+    const raw = document.createElement("p");
+    raw.className = "compare-raw";
+    const latency = `${Math.round(stats.avg_latency_ms)} ms${stats.avg_latency_stdev_ms ? ` ± ${Math.round(stats.avg_latency_stdev_ms)}` : ""}`;
+    const speed = stats.avg_tokens_per_sec ? `${approx}${stats.avg_tokens_per_sec} tok/s` : "speed n/a";
+    raw.textContent = `${latency} · ${speed} · $${(stats.total_cost_usd || 0).toFixed(4)}`;
+    col.appendChild(raw);
+
+    const suggestion = (data.suggestions || {})[target];
+    const sugEl = document.createElement("div");
+    sugEl.className = "compare-suggestion";
+    if (suggestion) {
+      const text = document.createElement("p");
+      text.textContent = `Try ${suggestion.name}: ${suggestion.reason}`;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary";
+      button.textContent = "Try it";
+      button.setAttribute("aria-label", `Swap ${target} for ${suggestion.model_id} in your selection`);
+      button.addEventListener("click", () => tryIt(target, suggestion.model_id));
+      sugEl.append(text, button);
+    } else {
+      sugEl.textContent = "Good fit — no better option in this catalog.";
+    }
+    col.appendChild(sugEl);
+    grid.appendChild(col);
+  });
+
+  const judgeLine = document.getElementById("judge-line");
+  judgeLine.textContent = data.judge ? `Judged by ${data.judge.model} via ${BACKEND_LABELS[data.judge.backend] || data.judge.backend}` : "";
+
+  const adviceBox = document.getElementById("advice-box");
+  adviceBox.innerHTML = "";
+  const lines = [];
+  if (data.advice) {
+    lines.push(data.advice);
+  } else {
+    Object.values(data.suggestions || {}).filter(Boolean).forEach((s) => lines.push(s.reason));
+  }
+  if (data.bias_note) lines.push(data.bias_note);
+  lines.forEach((line) => {
+    const p = document.createElement("p");
+    p.textContent = line;
+    adviceBox.appendChild(p);
+  });
+  adviceBox.hidden = lines.length === 0;
+}
+
+function tryIt(oldTarget, newTarget) {
+  const status = document.getElementById("run-status");
+  if (state.selectedModels.has(newTarget)) {
+    status.textContent = `${newTarget} is already selected.`;
+    return;
+  }
+  if (!state.selectedModels.has(oldTarget) && atCap()) {
+    status.textContent = capMessage();
+    return;
+  }
+  state.selectedModels.delete(oldTarget);
+  state.selectedModels.add(newTarget);
+  syncSelectionVisuals();
+  updateSelectionMeta();
+  status.textContent = `Swapped ${oldTarget} → ${newTarget}. Click Run comparison to test it.`;
+}
+
 const CATEGORY_LABELS = {
   accuracy: ["Accuracy", "#4285F4"],
   rule_checks: ["Checks", "#0668E1"],
   cost_efficiency: ["Cost Eff.", "#1e8e3e"],
-  speed: ["Speed", "#f9ab00"],
+  response_time: ["Resp. Time", "#f9ab00"],
+  throughput: ["Speed", "#e8710a"],
 };
 
 function renderCategoryChips(categories) {
@@ -534,6 +791,8 @@ function renderResults(data) {
   verdictEl.textContent = data.verdict.winner
     ? `${data.verdict.winner}: ${data.verdict.rationale}`
     : "No verdict available.";
+
+  renderCompareGrid(data);
 
   renderCategoryChart(data.grades);
 
@@ -602,7 +861,7 @@ function triggerDownload(url, filename) {
 
 function downloadReport() {
   if (!state.activeRunId) return;
-  triggerDownload(`/api/report?run_id=${encodeURIComponent(state.activeRunId)}`, "evalforge-report.pdf");
+  triggerDownload(`/api/report?run_id=${encodeURIComponent(state.activeRunId)}&priority=${encodeURIComponent(document.getElementById("priority").value)}`, "evalforge-report.pdf");
 }
 
 function downloadCsv() {
@@ -624,6 +883,11 @@ document.getElementById("download-csv").addEventListener("click", downloadCsv);
 document.getElementById("policy-file").addEventListener("change", (e) => {
   if (e.target.files[0]) uploadPolicy(e.target.files[0]);
 });
+document.getElementById("priority").addEventListener("change", () => {
+  const run = state.runs.find((r) => r.run_id === state.activeRunId);
+  if (run) renderCompareGrid(run);
+});
+document.getElementById("repeats").addEventListener("change", updateSelectionMeta);
 
 function toggleMenu(open) {
   document.getElementById("mobile-menu").classList.toggle("open", open);

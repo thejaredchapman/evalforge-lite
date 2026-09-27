@@ -375,3 +375,25 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
   user-select: none;
 }
 .backend-chip.selected { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+
+.run-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
+.run-options label { margin: 0; }
+#priority, #repeats {
+  font-family: inherit; font-size: 13px; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--fg);
+}
+.run-meta { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.compare-col { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--surface); }
+.compare-col.best { border-color: var(--grade-a); box-shadow: 0 0 0 1px var(--grade-a) inset; }
+.compare-title { font-weight: bold; font-size: 13px; word-break: break-all; margin: 0 0 6px; }
+.best-badge { display: inline-block; font-size: 10px; padding: 1px 8px; border-radius: 999px; background: var(--grade-a); color: #fff; margin-bottom: 6px; }
+.metric { margin: 6px 0; font-size: 12px; }
+.metric-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 2px; }
+.metric-fill { height: 100%; background: var(--fg); }
+.compare-raw { font-size: 11px; color: var(--muted); margin: 6px 0; }
+.compare-suggestion { font-size: 12px; margin-top: 8px; }
+.compare-suggestion button { margin-top: 4px; }
+.advice-box { font-size: 13px; margin-bottom: 12px; }
+.help-box summary { cursor: pointer; font-size: 13px; }
+.help-box ul { font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
