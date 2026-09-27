@@ -1,7 +1,7 @@
 # EvalForge Lite — Four-Model Comparison, Speed/Quality Metrics & Same-Provider Suggestions
 
 **Date:** 2026-09-26
-**Status:** Design (pending user review)
+**Status:** Design (pending user review) — revised with review additions §8
 **Branch:** `feat/four-model-comparison` (stacked on `feat/bedrock-vertex-backends` / PR #17)
 
 ## Goal
@@ -172,6 +172,123 @@ Tier order: `fast` (0) < `balanced` (1) < `flagship` (2).
 - `report`: new CSV columns; PDF builds with suggestions.
 - Frontend: `node --check`, plus a browser check of the cap, side-by-side view, and priority re-rank
   (manual, against mocked or real runs).
+
+## 8. Additions from spec review (these override earlier sections where noted)
+
+### 8.1 Don't suggest models already being compared (changes §3b "Candidate pool")
+Remove from the candidate pool every model whose resulting target (same `@backend` suffix) is already
+one of the run's targets. If that leaves no candidate in the wanted direction, the suggestion is `None`.
+
+### 8.2 Minimum real gap before flagging slow/pricey (changes §3b rules 2–3)
+The relative score alone is too trigger-happy with 2–3 models. Flag it only when the absolute gap is
+real too:
+- `latency_weak` requires (`response_time` ≤ 40 **and** avg latency ≥ 1.25 × the fastest model's avg
+  latency) **or** (`throughput` ≤ 40 **and** avg tok/s ≤ 0.8 × the best model's avg tok/s).
+- `cost_weak` additionally requires total cost ≥ 1.25 × the cheapest model's total cost.
+- Constants live in `advisor.py`: `LATENCY_GAP = 1.25`, `THROUGHPUT_GAP = 0.8`, `COST_GAP = 1.25`.
+
+### 8.3 Failed/blocked models
+A target with **no successful cells** (all errored or policy-blocked):
+- advisor → `None`;
+- excluded from the priority ranking and the "Best for your priority" badge;
+- side-by-side column shows the grade (if any) plus "No successful responses (E errors, B blocked)"
+  instead of bars.
+
+`stats[target]` gains `ok_cells`, `error_cells`, `blocked_cells` counts to drive this.
+
+### 8.4 Priority weights shared server-side; PDF knows the priority (changes §4, §5)
+- `grading.PRIORITY_WEIGHTS = {"balanced": ..., "quality": ..., "fastest": ..., "cheapest": ...}`
+  (values from §4) and
+  `grading.rank_targets(grades, stats, priority) -> [target, ...]`, best first. It renormalizes over
+  non-`None` metrics, excludes targets with `ok_cells == 0`, and breaks ties by
+  (higher quality, lower avg latency, target string).
+- `/api/catalog` returns `"priority_weights"` so the frontend uses the same numbers. The JS ranking
+  must match `rank_targets` (same renormalization and tie-break).
+- `/api/report?run_id=…&priority=<balanced|quality|fastest|cheapest>` (default `balanced`; an invalid
+  value → 400). The PDF header shows "Priority: <label> — best pick: <target>" using `rank_targets`.
+  The frontend's download buttons pass the current `#priority` value. The CSV is unchanged
+  (priority-independent).
+
+### 8.5 Judge disclosure and bias warning
+- The run result gains `"judge": {"backend": <judge_backend>, "model": <resolved judge model id>}`.
+- The side-by-side view shows "Judged by <model> via <backend>". The PDF shows the same line.
+- If the judge model's provider matches a compared target's provider (e.g. an Anthropic judge scoring
+  Claude), show the note "The judge is from the same family as <model> — scores may lean in its
+  favor." in the advice box and in the PDF.
+- The help box gains: "A judge can favor its own model family — for important decisions, re-run with
+  a judge from a different provider."
+
+### 8.6 Tie-break and one-model runs (changes §3b, §4)
+- Tie-break: see 8.4.
+- With exactly **one** successful target, the relative rules (latency, cost) are skipped. Only the
+  absolute quality rule (`grade.score` < 70) can produce a suggestion. The priority badge is hidden.
+
+### 8.7 One-click "Try it"
+Each suggestion in the side-by-side view has a **Try it** button:
+1. Remove the weak target from `state.selectedModels`, add the suggested target, and update the
+   badge/chip visuals. Chips and badges carry `data-target` for this.
+2. Honor the cap. A swap never changes the count.
+3. Set `#run-status` to "Swapped <old> → <new>. Click Run comparison to test it." It does **not** start
+   a run automatically.
+
+### 8.8 Optional repeats for timing accuracy
+- `/api/run` and MCP `run_comparison` accept `repeats` ∈ {1, 2, 3} (default 1; anything else → 400/error).
+- `runner.run(..., repeats=1)`: each (test case, target) is called `repeats` times **for timing only**.
+  Checks and the judge run on the **first** successful response. The policy gate runs once per cell.
+- The cell records `latency_ms` (mean), `latency_ms_stdev` (population stdev, `None` when fewer than
+  2 samples), and `tokens_per_sec` (mean of samples with a value). Cost sums all samples.
+- The whole run still counts as **one** run against the rate limit. The UI has a "Repeat each prompt"
+  select (1/2/3) with the hint "More accurate timing; multiplies model calls and cost."
+- Side-by-side shows "avg ± stdev ms" when available.
+
+### 8.9 Reasoning models: approximate speed
+- Catalog models get an optional `"reasoning": true`: `~openai/gpt-latest`, `openai/gpt-5`,
+  `openai/gpt-5-mini`, `google/gemini-2.5-pro`, `google/gemini-2.5-flash`, `google/gemini-3.7-flash`,
+  `~google/gemini-pro-latest`.
+- For those targets the UI and PDF show speed as "≈ N tok/s", with a tooltip/footnote: "Includes hidden
+  reasoning tokens on some providers — approximate."
+
+### 8.10 Pre-run cost estimate
+- `catalog.fetch_openrouter_models()` also keeps `pricing` (`prompt`/`completion`, USD per token, as
+  floats) when OpenRouter provides it.
+- `/api/catalog` curated routes already carry Bedrock/Vertex prices (per 1M tokens).
+- Frontend `estimateCost()`: for each selected target × test case × repeats, estimate
+  input ≈ ceil(len(prompt)/4) tokens and output = 500 tokens, priced from the route (Bedrock/Vertex)
+  or the live OpenRouter pricing. Show "Estimated cost: ~$0.0042 (rough; excludes judge calls)" next to
+  Run. If any selected target has no price, show "Estimated cost: unavailable for <n> model(s)" for
+  those and sum the rest. It recalculates on every selection, test-case, or repeats change.
+
+### 8.11 Accessibility and phones
+- Every metric bar shows its numeric value as text ("Quality 82/100") and has an `aria-label`. Color
+  is never the only signal.
+- `#compare-grid` is a CSS grid, `repeat(auto-fit, minmax(200px, 1fr))`, so columns stack on phones.
+- The priority `<select>`, repeats `<select>`, and Try-it buttons have visible labels / `aria-label`s.
+
+### 8.12 MCP priority
+`run_comparison(..., priority="balanced", repeats=1)` validates `priority` against
+`grading.PRIORITY_WEIGHTS` and returns `"ranking"` (from `rank_targets`) and
+`"best_for_priority"` (first element or `None`).
+
+### 8.13 Docs
+- README: a "Comparing up to 4 models" section covering the metrics and what each means, the priority
+  selector, suggestions (same provider and backend only; judge-written explanation), Try it, repeats,
+  the cost estimate, and the judge-bias caveat. Note that each run makes **one extra judge call** for
+  the explanation.
+- MCP section documents `priority`, `repeats`, `suggestions`, `advice`, `ranking`, `best_for_priority`.
+- CLAUDE.md (untracked, local): add `advisor.py` to the module list and the new run-result fields.
+
+### 8.14 Testing additions
+- advisor: already-compared exclusion; the gap thresholds (a model 10% slower is NOT flagged, one 30%
+  slower IS); a failed target → `None`; one-model run → only the quality rule applies.
+- grading: `rank_targets` weights, renormalization with `None` metrics, excluding failed targets, and
+  tie-break order.
+- runner: `repeats=3` makes 3 model calls per cell but 1 judge call; mean/stdev math; cost sums samples.
+- app/mcp: `repeats` validation; `priority` validation (report 400 and MCP error); `judge` field
+  present; `ranking`/`best_for_priority` in MCP.
+- report: the PDF builds with a priority line, judge line, and bias note; `?priority=` is honored.
+- catalog: `fetch_openrouter_models` keeps pricing (mocked `requests.get`).
+- Frontend (browser check): cap, Try it swap, priority re-rank matches the server ranking for the
+  same run, cost estimate updates, stacked layout at phone width.
 
 ## Out of scope
 
