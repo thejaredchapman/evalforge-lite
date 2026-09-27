@@ -78,12 +78,13 @@ def _relative_score(value, values, lower_is_better):
     return round(100 * fraction, 1)
 
 
-def category_scores(judge_scores, rule_check_results, cost_usd, all_costs, latency_ms, all_latencies):
+def category_scores(judge_scores, rule_check_results, cost_usd, all_costs, latency_ms, all_latencies,
+                    tokens_per_sec=None, all_tokens_per_sec=()):
     """Break a model's performance into separately visible dimensions.
 
     accuracy/rule_checks are absolute (same math as compute_score's components).
-    cost_efficiency/speed are relative to the other models in the same run —
-    a raw cost or latency number alone isn't meaningfully "good" or "bad".
+    cost_efficiency/response_time/throughput are relative to the other models in the
+    same run — a raw cost, latency, or tokens/sec number alone isn't "good" or "bad".
     """
     accuracy = None
     if judge_scores:
@@ -97,8 +98,64 @@ def category_scores(judge_scores, rule_check_results, cost_usd, all_costs, laten
         "accuracy": accuracy,
         "rule_checks": rule_checks,
         "cost_efficiency": _relative_score(cost_usd, all_costs, lower_is_better=True),
-        "speed": _relative_score(latency_ms, all_latencies, lower_is_better=True),
+        "response_time": _relative_score(latency_ms, all_latencies, lower_is_better=True),
+        "throughput": _relative_score(tokens_per_sec, list(all_tokens_per_sec), lower_is_better=False),
     }
+
+
+PRIORITY_WEIGHTS = {
+    "balanced": {"quality": 0.4, "response_time": 0.2, "throughput": 0.2, "cost_efficiency": 0.2},
+    "quality": {"quality": 0.7, "response_time": 0.1, "throughput": 0.1, "cost_efficiency": 0.1},
+    "fastest": {"quality": 0.2, "response_time": 0.4, "throughput": 0.4, "cost_efficiency": 0.0},
+    "cheapest": {"quality": 0.3, "response_time": 0.1, "throughput": 0.1, "cost_efficiency": 0.5},
+}
+PRIORITY_LABELS = {"balanced": "Balanced", "quality": "Best quality", "fastest": "Fastest", "cheapest": "Cheapest"}
+
+
+def _priority_metrics(grade):
+    categories = grade.get("categories") or {}
+    return {
+        "quality": grade.get("score"),
+        "response_time": categories.get("response_time"),
+        "throughput": categories.get("throughput"),
+        "cost_efficiency": categories.get("cost_efficiency"),
+    }
+
+
+def _raw_weighted_score(grade, priority):
+    weights = PRIORITY_WEIGHTS[priority]
+    values = _priority_metrics(grade)
+    total_weight = sum(w for key, w in weights.items() if w > 0 and values[key] is not None)
+    if total_weight == 0:
+        return None
+    return sum(values[key] * w for key, w in weights.items() if w > 0 and values[key] is not None) / total_weight
+
+
+def weighted_score(grade, priority):
+    raw = _raw_weighted_score(grade, priority)
+    return round(raw, 1) if raw is not None else None
+
+
+def rank_targets(grades, stats, priority):
+    scored = {}
+    for target, grade in grades.items():
+        if (stats.get(target) or {}).get("ok_cells", 0) == 0:
+            continue
+        raw = _raw_weighted_score(grade, priority)
+        if raw is not None:
+            scored[target] = raw
+
+    def sort_key(target):
+        quality = grades[target].get("score")
+        latency = (stats.get(target) or {}).get("avg_latency_ms")
+        return (
+            -scored[target],
+            -(quality if quality is not None else -1),
+            latency if latency is not None else float("inf"),
+            target,
+        )
+
+    return sorted(scored, key=sort_key)
 
 
 def best_model_for_test_case(cells):

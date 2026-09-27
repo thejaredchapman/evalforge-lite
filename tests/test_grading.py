@@ -83,7 +83,7 @@ def test_category_scores_cost_and_speed_are_relative_to_the_run():
         cost_usd=0.01, all_costs=[0.01, 0.05], latency_ms=100, all_latencies=[100, 500],
     )
     assert categories["cost_efficiency"] == 100.0
-    assert categories["speed"] == 100.0
+    assert categories["response_time"] == 100.0
 
     # the pricier/slower one should score lower
     categories2 = grading.category_scores(
@@ -91,7 +91,7 @@ def test_category_scores_cost_and_speed_are_relative_to_the_run():
         cost_usd=0.05, all_costs=[0.01, 0.05], latency_ms=500, all_latencies=[100, 500],
     )
     assert categories2["cost_efficiency"] == 0.0
-    assert categories2["speed"] == 0.0
+    assert categories2["response_time"] == 0.0
 
 
 def test_category_scores_all_equal_costs_score_100():
@@ -100,7 +100,7 @@ def test_category_scores_all_equal_costs_score_100():
         cost_usd=0.02, all_costs=[0.02, 0.02], latency_ms=150, all_latencies=[150, 150],
     )
     assert categories["cost_efficiency"] == 100.0
-    assert categories["speed"] == 100.0
+    assert categories["response_time"] == 100.0
 
 
 def test_category_scores_missing_data_is_none():
@@ -109,8 +109,64 @@ def test_category_scores_missing_data_is_none():
         cost_usd=None, all_costs=[], latency_ms=None, all_latencies=[],
     )
     assert categories == {
-        "accuracy": None, "rule_checks": None, "cost_efficiency": None, "speed": None,
+        "accuracy": None, "rule_checks": None, "cost_efficiency": None, "response_time": None, "throughput": None,
     }
+
+
+def test_category_scores_throughput_is_relative_and_higher_is_better():
+    fast = grading.category_scores([], [], None, [], None, [], tokens_per_sec=100.0, all_tokens_per_sec=[50.0, 100.0])
+    slow = grading.category_scores([], [], None, [], None, [], tokens_per_sec=50.0, all_tokens_per_sec=[50.0, 100.0])
+    assert fast["throughput"] == 100.0
+    assert slow["throughput"] == 0.0
+
+
+def test_category_scores_throughput_none_without_value():
+    assert grading.category_scores([], [], None, [], None, [], tokens_per_sec=None, all_tokens_per_sec=[80.0])["throughput"] is None
+
+
+def _grade(score, response_time=None, throughput=None, cost_efficiency=None):
+    return {"score": score, "categories": {"response_time": response_time, "throughput": throughput,
+                                           "cost_efficiency": cost_efficiency}}
+
+
+def test_priority_weights_cover_all_priorities_and_sum_to_one():
+    assert set(grading.PRIORITY_WEIGHTS) == {"balanced", "quality", "fastest", "cheapest"}
+    for weights in grading.PRIORITY_WEIGHTS.values():
+        assert set(weights) == {"quality", "response_time", "throughput", "cost_efficiency"}
+        assert round(sum(weights.values()), 6) == 1.0
+    assert set(grading.PRIORITY_LABELS) == set(grading.PRIORITY_WEIGHTS)
+
+
+def test_weighted_score_renormalizes_over_missing_metrics():
+    # balanced: quality .4, response_time .2, throughput .2 (missing), cost .2 (missing)
+    assert grading.weighted_score(_grade(90, response_time=60), "balanced") == round((90 * 0.4 + 60 * 0.2) / 0.6, 1)
+
+
+def test_weighted_score_none_when_nothing_scored():
+    assert grading.weighted_score(_grade(None), "balanced") is None
+
+
+def test_rank_targets_orders_by_priority():
+    # quality: a = 95*.7 + 50*.1*3 = 81.5 vs b = 70*.7 + 100*.1*3 = 79  -> a first
+    # fastest: a = 95*.2 + 50*.4 + 50*.4 = 59 vs b = 70*.2 + 100*.4 + 100*.4 = 94  -> b first
+    grades = {"a": _grade(95, response_time=50, throughput=50, cost_efficiency=50),
+              "b": _grade(70, response_time=100, throughput=100, cost_efficiency=100)}
+    stats = {"a": {"ok_cells": 1, "avg_latency_ms": 900}, "b": {"ok_cells": 1, "avg_latency_ms": 100}}
+    assert grading.rank_targets(grades, stats, "quality") == ["a", "b"]
+    assert grading.rank_targets(grades, stats, "fastest") == ["b", "a"]
+
+
+def test_rank_targets_excludes_failed_and_unscored_targets():
+    grades = {"a": _grade(80), "failed": _grade(None), "blocked": _grade(99)}
+    stats = {"a": {"ok_cells": 1}, "failed": {"ok_cells": 0}, "blocked": {"ok_cells": 0}}
+    assert grading.rank_targets(grades, stats, "balanced") == ["a"]
+
+
+def test_rank_targets_tie_break_quality_then_latency_then_name():
+    grades = {"z": _grade(80), "y": _grade(80), "x": _grade(80)}
+    stats = {"z": {"ok_cells": 1, "avg_latency_ms": 100}, "y": {"ok_cells": 1, "avg_latency_ms": 100},
+             "x": {"ok_cells": 1, "avg_latency_ms": 300}}
+    assert grading.rank_targets(grades, stats, "quality") == ["y", "z", "x"]
 
 
 def _cell(model_id, judge_score=None, judge_rationale=None, checks=None, latency_ms=10):
