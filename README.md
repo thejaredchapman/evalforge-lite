@@ -104,12 +104,15 @@ count instead.
 ### What matters most?
 
 The priority selector (Balanced / Best quality / Fastest / Cheapest)
-re-weights quality, response time, speed, and cost and re-ranks the
-side-by-side columns instantly, client-side — no new run. The top column
-gets a "Best for your priority" badge. Missing metrics are excluded and the
-remaining weights are renormalized, so one `None` value doesn't skew the
-score. The same weights drive the downloaded PDF, which shows the priority
-you had selected and its best pick.
+re-weights quality, response time, speed, and cost instantly, client-side —
+no new run. It does **not** reorder the side-by-side columns; instead the
+column that scores best for the selected priority gets a "Best for
+\<priority\>" badge, shown only once at least 2 models have successful
+results (with a single result there's nothing to compare, so no badge is
+shown). Missing metrics are excluded and the remaining weights are
+renormalized, so one `None` value doesn't skew the score. The same weights
+drive the downloaded PDF, which shows the priority you had selected and its
+best pick.
 
 ### Suggestions
 
@@ -122,9 +125,11 @@ writes a short plain-English explanation of the trade-offs, falling back to
 the rule's own one-line reason if that call fails or tries to name a model
 outside the comparison. **This adds one extra judge call per run.**
 
-Click **Try it** on a suggestion to swap that model into your selection
-(it replaces the weak model, keeps your count the same) — it doesn't start
-a new run automatically; click **Run comparison** again to test it.
+Click **Try it** on a suggestion to swap it into your selection: if the
+weak model it's replacing is still selected, the suggestion takes its place
+(your count stays the same); if you've already deselected that model, the
+suggestion is just added instead, subject to the 4-model cap. It doesn't
+start a new run automatically — click **Run comparison** again to test it.
 
 ### Repeat each prompt
 
@@ -149,8 +154,9 @@ recalculates whenever you change your selection, test cases, or repeats.
 The side-by-side view and PDF both show "Judged by \<model\> via
 \<backend\>". If the judge shares a provider with one of the models you're
 comparing (e.g. an Anthropic judge scoring a Claude model), a note warns
-that scores may lean in that model's favor — for important decisions,
-re-run with a judge from a different provider.
+that "the judge ... is from the same family as ..." and that scores may
+lean in that model's favor — for important decisions, re-run with a judge
+from a different provider.
 
 ## MCP server
 
@@ -254,6 +260,21 @@ across everyone who uses it.
 Every LLM/HTTP call is mocked (or, for the MCP end-to-end tests, exercised
 with an empty test-case/model list that never reaches the network) — the
 suite needs no API key and makes no network calls.
+
+## Upgrading
+
+If you're integrating against the CSV export or the API/MCP `categories`
+field from before the 4-model comparison work, note:
+
+- CSV: the `speed_score` column was renamed `response_time_score`. Two
+  columns were added: `tokens_per_sec` (right after `latency_ms`) and
+  `throughput_score` (right after `response_time_score`). Current column
+  order is `..., latency_ms, tokens, tokens_per_sec, accuracy_score,
+  rule_checks_score, cost_efficiency_score, response_time_score,
+  throughput_score, best_model_for_prompt, best_model_reason`.
+- API/MCP: `categories.speed` in a run result's `grades[<model>].categories`
+  is now `categories.response_time`, and a new `categories.throughput` key
+  was added alongside it.
 
 ## Features
 
