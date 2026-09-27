@@ -212,7 +212,7 @@ def api_report():
     if not run_result:
         return _with_session_cookie(_error_response("no_run_available", 404), session_id)
 
-    pdf_bytes = report.build_pdf(run_result)
+    pdf_bytes = report.build_pdf(run_result, priority=priority)
     resp = send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",

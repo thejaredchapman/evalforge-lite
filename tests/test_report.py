@@ -35,7 +35,8 @@ def _sample_run_result(
     grade = {"score": 100.0, "letter": "A+", "sentence": "Strong performer (A+, 100.0/100)."}
     if include_categories:
         grade["categories"] = {
-            "accuracy": 100.0, "rule_checks": 100.0, "cost_efficiency": 100.0, "speed": 100.0,
+            "accuracy": 100.0, "rule_checks": 100.0, "cost_efficiency": 100.0,
+            "response_time": 100.0, "throughput": 75.0,
         }
 
     run_result = {
@@ -46,8 +47,19 @@ def _sample_run_result(
         "verdict": {"winner": "openai/gpt-5", "rationale": "Most accurate and best formatted."},
     }
     if include_stats:
-        run_result["stats"] = {"openai/gpt-5": {"total_cost_usd": 0.002, "avg_latency_ms": 120.0}}
+        run_result["stats"] = {
+            "openai/gpt-5": {
+                "total_cost_usd": 0.002, "avg_latency_ms": 120.0,
+                "avg_tokens_per_sec": 50.0, "ok_cells": 1, "error_cells": 0, "blocked_cells": 0,
+            }
+        }
     return run_result
+
+
+def _pdf_text(pdf_bytes):
+    import pdfplumber
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
 def test_generates_valid_pdf_bytes_for_a_run():
@@ -89,7 +101,8 @@ def test_pdf_includes_category_breakdown_when_present():
 
 def test_build_category_chart_returns_png_bytes_when_categories_present():
     grades = {"openai/gpt-5": {"categories": {
-        "accuracy": 100.0, "rule_checks": None, "cost_efficiency": 50.0, "speed": 80.0,
+        "accuracy": 100.0, "rule_checks": None, "cost_efficiency": 50.0,
+        "response_time": 80.0, "throughput": 60.0,
     }}}
     chart_bytes = report._build_category_chart(grades)
     assert chart_bytes is not None
@@ -114,8 +127,8 @@ def test_build_csv_returns_string_with_header_row():
     header = next(reader)
     assert header == [
         "prompt", "model_id", "status", "response_text", "judge_score",
-        "judge_rationale", "checks_passed", "checks_total", "cost_usd", "latency_ms", "tokens",
-        "accuracy_score", "rule_checks_score", "cost_efficiency_score", "speed_score",
+        "judge_rationale", "checks_passed", "checks_total", "cost_usd", "latency_ms", "tokens", "tokens_per_sec",
+        "accuracy_score", "rule_checks_score", "cost_efficiency_score", "response_time_score", "throughput_score",
         "best_model_for_prompt", "best_model_reason",
     ]
 
@@ -152,6 +165,7 @@ def test_build_csv_row_values_for_ok_cell():
     assert row["judge_score"] == "5"
     assert row["checks_passed"] == "1"
     assert row["checks_total"] == "1"
+    assert row["tokens_per_sec"] == ""
 
 
 def test_build_csv_row_values_for_blocked_cell():
@@ -161,6 +175,7 @@ def test_build_csv_row_values_for_blocked_cell():
     blocked_row = next(r for r in rows if r["model_id"] == "anthropic/claude-opus-4.5")
     assert blocked_row["status"] == "blocked"
     assert blocked_row["response_text"] == ""
+    assert blocked_row["tokens_per_sec"] == ""
 
 
 def test_build_csv_handles_empty_results():
@@ -168,3 +183,24 @@ def test_build_csv_handles_empty_results():
     reader = csv.reader(io.StringIO(csv_text))
     rows = list(reader)
     assert len(rows) == 1  # header only
+
+
+def test_pdf_includes_priority_judge_suggestions_and_bias_note():
+    run = _sample_run_result(include_categories=True, include_stats=True)
+    run["judge"] = {"backend": "openrouter", "model": "openai/gpt-4o-mini"}
+    run["suggestions"] = {next(iter(run["grades"])): {"model_id": "anthropic/claude-haiku-4.5", "name": "Claude Haiku 4.5",
+                                                      "reason_code": "latency", "reason": "Faster tier."}}
+    run["advice"] = "Pick the faster one."
+    run["bias_note"] = "The judge is from the same family."
+    pdf_bytes = report.build_pdf(run, priority="fastest")
+    text = _pdf_text(pdf_bytes)
+    assert "Priority: Fastest" in text
+    assert "Judged by openai/gpt-4o-mini via OpenRouter" in text
+    assert "Claude Haiku 4.5" in text and "Pick the faster one." in text and "same family" in text
+
+
+def test_build_csv_includes_tokens_per_sec():
+    run = _sample_run_result()
+    first_cell = next(iter(run["results"][0]["cells"].values()))
+    first_cell["tokens_per_sec"] = 42.5
+    assert "42.5" in report.build_csv(run)
