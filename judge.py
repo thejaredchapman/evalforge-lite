@@ -107,18 +107,18 @@ def evaluate_prompt(prompt, creds, backend="openrouter", judge_model=None):
 
 
 def explain_recommendations(summary, creds, backend="openrouter", judge_model=None, disallowed_terms=()):
-    models_text = "\n".join(f"- {target}: {scores}" for target, scores in summary.get("models", {}).items())
-    suggestion_lines = [
-        f"- instead of {target}: {s['name']} ({s['model_id']}), because of {s['reason_code']}"
-        for target, s in summary.get("suggestions", {}).items() if s
-    ]
-    prompt = EXPLAIN_PROMPT_TEMPLATE.format(models=models_text, suggestions="\n".join(suggestion_lines) or "- none")
-
     try:
+        models_text = "\n".join(f"- {target}: {scores}" for target, scores in summary.get("models", {}).items())
+        suggestion_lines = [
+            f"- instead of {target}: {s['name']} ({s['model_id']}), because of {s['reason_code']}"
+            for target, s in summary.get("suggestions", {}).items() if s
+        ]
+        prompt = EXPLAIN_PROMPT_TEMPLATE.format(models=models_text, suggestions="\n".join(suggestion_lines) or "- none")
+
         model = judge_model or config.JUDGE_MODELS[backend]
         result = gateway.call_backend(backend, model, [{"role": "user", "content": prompt}], creds)
         advice = str(_extract_json(result["text"])["advice"]).strip()
-    except (gateway.GatewayError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (gateway.GatewayError, ValueError, KeyError, TypeError, AttributeError, json.JSONDecodeError):
         return ""
 
     lowered = advice.lower()

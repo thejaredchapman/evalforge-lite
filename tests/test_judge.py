@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 import config
 import gateway
 import judge
@@ -197,3 +199,14 @@ def test_explain_recommendations_fails_soft(mock_call):
 def test_explain_recommendations_unparseable_is_empty(mock_call):
     mock_call.side_effect = _fake_call_backend("no json here")
     assert judge.explain_recommendations(_SUMMARY, creds={}) == ""
+
+
+@pytest.mark.parametrize("bad_summary", [
+    None,
+    {"models": {}, "suggestions": {"x": {"model_id": "y", "name": "z"}}},
+    {"models": "not a dict", "suggestions": {}},
+])
+@patch("judge.gateway.call_backend")
+def test_explain_recommendations_malformed_summary_is_empty(mock_call, bad_summary):
+    assert judge.explain_recommendations(bad_summary, creds={}) == ""
+    mock_call.assert_not_called()
