@@ -409,3 +409,22 @@ def test_call_backend_foundry_rejects_malicious_resource_before_dispatch(mock_ca
     with pytest.raises(GatewayError):
         gateway.call_backend("foundry", "openai/gpt-5", MESSAGES, {"foundry": raw})
     mock_call.assert_not_called()
+
+
+@patch("gateway.foundry.call_model", return_value=dict(FAKE_RESULT))
+def test_call_target_foundry_resolves_route_and_prices_it(mock_call):
+    result = gateway.call_target(
+        "openai/gpt-5@foundry", MESSAGES,
+        {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}},
+    )
+    assert mock_call.call_args[0][0] == "gpt-5"
+    # 10 input tokens * $1.25/M + 20 output tokens * $10/M
+    assert result["cost_usd"] == pytest.approx(0.0002125)
+
+
+def test_call_target_foundry_model_without_route_raises():
+    with pytest.raises(GatewayError, match="anthropic/claude-opus-4.5 is not available on Microsoft Foundry."):
+        gateway.call_target(
+            "anthropic/claude-opus-4.5@foundry", MESSAGES,
+            {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}},
+        )

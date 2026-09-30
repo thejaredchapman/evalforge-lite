@@ -111,7 +111,7 @@ def test_every_route_is_well_formed():
     for provider in cat.values():
         for model in provider["models"]:
             for backend, route in (model.get("routes") or {}).items():
-                assert backend in ("bedrock", "vertex")
+                assert backend in ("bedrock", "vertex", "foundry")
                 assert isinstance(route["id"], str) and route["id"]
                 assert set(route["price"]) == {"input_per_m", "output_per_m"}
                 assert all(isinstance(v, (int, float)) and v >= 0 for v in route["price"].values())
@@ -223,6 +223,30 @@ def test_find_model():
     provider_id, model = catalog.find_model(cat, "anthropic/claude-haiku-4.5")
     assert provider_id == "anthropic" and model["name"] == "Claude Haiku 4.5"
     assert catalog.find_model(cat, "nope/nope") == (None, None)
+
+
+FOUNDRY_ROUTED_MODELS = {
+    "openai/gpt-5", "openai/gpt-5-mini", "openai/gpt-4o", "openai/gpt-4o-mini",
+    "meta-llama/llama-4-maverick", "meta-llama/llama-4-scout", "meta-llama/llama-3.3-70b-instruct",
+}
+
+
+def test_every_expected_model_has_a_foundry_route():
+    cat = catalog.load_catalog()
+    routed = {m["id"] for p in cat.values() for m in p["models"] if "foundry" in (m.get("routes") or {})}
+    assert routed == FOUNDRY_ROUTED_MODELS
+
+
+def test_route_for_returns_foundry_route():
+    cat = catalog.load_catalog()
+    route = catalog.route_for(cat, "openai/gpt-5", "foundry")
+    assert route["id"] == "gpt-5"
+
+
+def test_region_availability_for_foundry_route():
+    cat = catalog.load_catalog()
+    assert catalog.region_availability(cat, "openai/gpt-5", "foundry", "eastus")["listed"] is True
+    assert catalog.region_availability(cat, "openai/gpt-5", "foundry", "japaneast")["listed"] is False
 
 
 @patch("catalog.requests.get")
