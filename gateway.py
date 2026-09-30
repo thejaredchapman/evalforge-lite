@@ -15,10 +15,6 @@ _VERTEX_REGION_RE = re.compile(r"^(global|[a-z]+-[a-z]+\d+)$")
 _VERTEX_PROJECT_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 
 
-def _known_region_ids(backend):
-    return {r["id"] for r in catalog.load_regions()[backend]["regions"]}
-
-
 def parse_target(target):
     if not isinstance(target, str) or not target:
         raise GatewayError("Model target must be a non-empty string.")
@@ -51,7 +47,7 @@ def _prepare_bedrock(raw):
     if not isinstance(raw, dict):
         raise GatewayError("Bedrock credentials must be an object.")
     region = raw.get("region")
-    if not _nonempty_str(region) or not _BEDROCK_REGION_RE.match(region) or region not in _known_region_ids("bedrock"):
+    if not _nonempty_str(region) or not _BEDROCK_REGION_RE.match(region):
         raise GatewayError("Bedrock region is missing or invalid.")
     _check_clean_fields(
         raw, ("api_key", "access_key_id", "secret_access_key", "session_token"),
@@ -78,7 +74,7 @@ def _prepare_vertex(raw):
     region = raw.get("region")
     if not _nonempty_str(project) or not _VERTEX_PROJECT_RE.match(project):
         raise GatewayError("Vertex project is missing or invalid.")
-    if not _nonempty_str(region) or not _VERTEX_REGION_RE.match(region) or region not in _known_region_ids("vertex"):
+    if not _nonempty_str(region) or not _VERTEX_REGION_RE.match(region):
         raise GatewayError("Vertex region is missing or invalid.")
     _check_clean_fields(
         raw, ("access_token",), "Vertex credentials contain whitespace or control characters.",

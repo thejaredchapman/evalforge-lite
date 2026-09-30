@@ -302,12 +302,23 @@ def test_check_run_creds_returns_prepared_creds_when_usable():
     assert prepared == {"openrouter": "sk-or-v1-test", "bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
 
 
-def test_prepare_creds_rejects_bedrock_region_not_in_curated_list():
-    prepared = gateway.prepare_creds({"bedrock": {"region": "af-south-1", "api_key": "ABSKexample"}})
+def test_prepare_creds_accepts_real_but_uncurated_bedrock_region():
+    prepared = gateway.prepare_creds({"bedrock": {"region": "ap-southeast-1", "api_key": "ABSKexample"}})
+    assert prepared["bedrock"] == {"region": "ap-southeast-1", "api_key": "ABSKexample"}
+
+
+def test_prepare_creds_accepts_real_but_uncurated_vertex_region():
+    prepared = gateway.prepare_creds({"vertex": {"project": "my-project-123", "region": "europe-west2",
+                                                 "access_token": "ya29.x"}})
+    assert prepared["vertex"] == {"project": "my-project-123", "region": "europe-west2", "access_token": "ya29.x"}
+
+
+def test_prepare_creds_still_rejects_malformed_bedrock_region():
+    prepared = gateway.prepare_creds({"bedrock": {"region": "x.evil.com#", "api_key": "ABSKexample"}})
     assert prepared["bedrock"] == {"error": "Bedrock region is missing or invalid."}
 
 
-def test_prepare_creds_rejects_vertex_region_not_in_curated_list():
-    prepared = gateway.prepare_creds({"vertex": {"project": "my-project-123", "region": "us-west4",
+def test_prepare_creds_still_rejects_malformed_vertex_region():
+    prepared = gateway.prepare_creds({"vertex": {"project": "my-project-123", "region": "x.evil.com#",
                                                  "access_token": "ya29.x"}})
     assert prepared["vertex"] == {"error": "Vertex region is missing or invalid."}
