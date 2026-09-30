@@ -300,3 +300,14 @@ def test_check_run_creds_returns_prepared_creds_when_usable():
     prepared, error = gateway.check_run_creds(raw, ["anthropic/claude-sonnet-4.5@bedrock", ""], "openrouter")
     assert error is None
     assert prepared == {"openrouter": "sk-or-v1-test", "bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}}
+
+
+def test_prepare_creds_rejects_bedrock_region_not_in_curated_list():
+    prepared = gateway.prepare_creds({"bedrock": {"region": "af-south-1", "api_key": "ABSKexample"}})
+    assert prepared["bedrock"] == {"error": "Bedrock region is missing or invalid."}
+
+
+def test_prepare_creds_rejects_vertex_region_not_in_curated_list():
+    prepared = gateway.prepare_creds({"vertex": {"project": "my-project-123", "region": "us-west4",
+                                                 "access_token": "ya29.x"}})
+    assert prepared["vertex"] == {"error": "Vertex region is missing or invalid."}

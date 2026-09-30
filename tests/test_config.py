@@ -36,3 +36,8 @@ def test_judge_models_cover_every_backend():
 
 def test_max_models_is_four():
     assert config.MAX_MODELS == 4
+
+
+def test_load_regions_returns_dict_with_expected_backends():
+    regions = config.load_regions()
+    assert set(regions) == {"bedrock", "vertex", "foundry"}

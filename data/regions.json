@@ -1,0 +1,59 @@
+{
+  "bedrock": {
+    "label": "Amazon Bedrock",
+    "verified": "2026-09-30",
+    "source": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-regions.html",
+    "regions": [
+      {"id": "us-east-1", "label": "US East (N. Virginia)", "geo": "US"},
+      {"id": "us-east-2", "label": "US East (Ohio)", "geo": "US"},
+      {"id": "us-west-2", "label": "US West (Oregon)", "geo": "US"},
+      {"id": "ca-central-1", "label": "Canada (Central)", "geo": "CA"},
+      {"id": "sa-east-1", "label": "South America (Sao Paulo)", "geo": "SA"},
+      {"id": "eu-central-1", "label": "Europe (Frankfurt)", "geo": "EU"},
+      {"id": "eu-west-1", "label": "Europe (Ireland)", "geo": "EU"},
+      {"id": "eu-west-3", "label": "Europe (Paris)", "geo": "EU"},
+      {"id": "ap-northeast-1", "label": "Asia Pacific (Tokyo)", "geo": "APAC"},
+      {"id": "ap-south-1", "label": "Asia Pacific (Mumbai)", "geo": "APAC"},
+      {"id": "ap-southeast-2", "label": "Asia Pacific (Sydney)", "geo": "APAC"},
+      {"id": "us-gov-west-1", "label": "AWS GovCloud (US-West)", "geo": "US-GOV"}
+    ]
+  },
+  "vertex": {
+    "label": "Google Vertex AI",
+    "verified": "2026-09-30",
+    "source": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations",
+    "regions": [
+      {"id": "global", "label": "Global", "geo": "GLOBAL"},
+      {"id": "us-central1", "label": "Iowa", "geo": "US"},
+      {"id": "us-east1", "label": "South Carolina", "geo": "US"},
+      {"id": "us-east4", "label": "N. Virginia", "geo": "US"},
+      {"id": "us-east5", "label": "Columbus", "geo": "US"},
+      {"id": "us-south1", "label": "Dallas", "geo": "US"},
+      {"id": "us-west1", "label": "Oregon", "geo": "US"},
+      {"id": "europe-west1", "label": "Belgium", "geo": "EU"},
+      {"id": "europe-west4", "label": "Netherlands", "geo": "EU"},
+      {"id": "europe-west9", "label": "Paris", "geo": "EU"},
+      {"id": "asia-northeast1", "label": "Tokyo", "geo": "APAC"},
+      {"id": "asia-southeast1", "label": "Singapore", "geo": "APAC"}
+    ]
+  },
+  "foundry": {
+    "label": "Microsoft Foundry",
+    "verified": "2026-09-30",
+    "source": "https://learn.microsoft.com/azure/ai-foundry/foundry-models/concepts/models",
+    "regions": [
+      {"id": "eastus", "label": "East US", "geo": "US"},
+      {"id": "eastus2", "label": "East US 2", "geo": "US"},
+      {"id": "westus", "label": "West US", "geo": "US"},
+      {"id": "westus3", "label": "West US 3", "geo": "US"},
+      {"id": "northcentralus", "label": "North Central US", "geo": "US"},
+      {"id": "southcentralus", "label": "South Central US", "geo": "US"},
+      {"id": "canadaeast", "label": "Canada East", "geo": "CA"},
+      {"id": "swedencentral", "label": "Sweden Central", "geo": "EU"},
+      {"id": "francecentral", "label": "France Central", "geo": "EU"},
+      {"id": "uksouth", "label": "UK South", "geo": "EU"},
+      {"id": "japaneast", "label": "Japan East", "geo": "APAC"},
+      {"id": "australiaeast", "label": "Australia East", "geo": "APAC"}
+    ]
+  }
+}

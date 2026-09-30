@@ -68,8 +68,46 @@ def test_route_for_missing_backend_or_model_returns_none():
     assert catalog.route_for(cat, "nonexistent/model", "vertex") is None
 
 
+def test_load_regions_matches_config():
+    assert catalog.load_regions() == config.load_regions()
+
+
+def test_load_regions_covers_bedrock_vertex_and_foundry():
+    regions = catalog.load_regions()
+    assert set(regions) == {"bedrock", "vertex", "foundry"}
+    for data in regions.values():
+        assert data["label"]
+        assert data["verified"]
+        assert data["source"].startswith("https://")
+        assert len(data["regions"]) > 0
+        for region in data["regions"]:
+            assert set(region) == {"id", "label", "geo"}
+
+
+def test_region_availability_listed():
+    cat = catalog.load_catalog()
+    result = catalog.region_availability(cat, "anthropic/claude-sonnet-4.5", "bedrock", "us-east-1")
+    assert result["listed"] is True
+    assert "us-east-1" in result["known_regions"]
+
+
+def test_region_availability_not_listed():
+    cat = catalog.load_catalog()
+    result = catalog.region_availability(cat, "anthropic/claude-sonnet-4.5", "bedrock", "sa-east-1")
+    assert result["listed"] is False
+    assert "sa-east-1" not in result["known_regions"]
+
+
+def test_region_availability_missing_route_returns_no_known_regions():
+    cat = catalog.load_catalog()
+    assert catalog.region_availability(cat, "openai/gpt-5", "bedrock", "us-east-1") == {
+        "listed": False, "known_regions": [],
+    }
+
+
 def test_every_route_is_well_formed():
     cat = catalog.load_catalog()
+    regions_by_backend = catalog.load_regions()
     for provider in cat.values():
         for model in provider["models"]:
             for backend, route in (model.get("routes") or {}).items():
@@ -77,6 +115,8 @@ def test_every_route_is_well_formed():
                 assert isinstance(route["id"], str) and route["id"]
                 assert set(route["price"]) == {"input_per_m", "output_per_m"}
                 assert all(isinstance(v, (int, float)) and v >= 0 for v in route["price"].values())
+                known_ids = {r["id"] for r in regions_by_backend[backend]["regions"]}
+                assert route["regions"] and set(route["regions"]) <= known_ids
 
 
 @patch("catalog.requests.get")
