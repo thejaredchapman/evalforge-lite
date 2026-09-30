@@ -322,3 +322,90 @@ def test_prepare_creds_still_rejects_malformed_vertex_region():
     prepared = gateway.prepare_creds({"vertex": {"project": "my-project-123", "region": "x.evil.com#",
                                                  "access_token": "ya29.x"}})
     assert prepared["vertex"] == {"error": "Vertex region is missing or invalid."}
+
+
+FOUNDRY_API_KEY_CREDS = {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}
+FOUNDRY_TOKEN_CREDS = {"resource": "my-resource", "region": "eastus",
+                      "access_token": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.sig"}
+
+
+def test_backends_include_foundry():
+    assert gateway.BACKENDS == ("openrouter", "bedrock", "vertex", "foundry")
+    assert gateway.BACKEND_LABELS["foundry"] == "Microsoft Foundry"
+
+
+def test_prepare_creds_accepts_foundry_api_key():
+    prepared = gateway.prepare_creds({"foundry": FOUNDRY_API_KEY_CREDS})
+    assert prepared["foundry"] == FOUNDRY_API_KEY_CREDS
+
+
+def test_prepare_creds_accepts_foundry_access_token():
+    prepared = gateway.prepare_creds({"foundry": FOUNDRY_TOKEN_CREDS})
+    assert prepared["foundry"] == FOUNDRY_TOKEN_CREDS
+
+
+@pytest.mark.parametrize("resource", ["evil.com#", "EVIL-RESOURCE", "a" * 70])
+def test_prepare_creds_rejects_bad_foundry_resource(resource):
+    raw = {"resource": resource, "region": "eastus", "api_key": "fake-api-key-12345678"}
+    prepared = gateway.prepare_creds({"foundry": raw})
+    assert prepared["foundry"] == {"error": "Foundry resource name is missing or invalid."}
+
+
+def test_prepare_creds_accepts_real_but_uncurated_foundry_region():
+    raw = {"resource": "my-resource", "region": "centralus", "api_key": "fake-api-key-12345678"}
+    prepared = gateway.prepare_creds({"foundry": raw})
+    assert prepared["foundry"] == {"resource": "my-resource", "region": "centralus",
+                                    "api_key": "fake-api-key-12345678"}
+
+
+@pytest.mark.parametrize("region", ["east us", "EastUS", "eastus.evil.com", "x#"])
+def test_prepare_creds_rejects_malformed_foundry_region(region):
+    raw = {"resource": "my-resource", "region": region, "api_key": "fake-api-key-12345678"}
+    prepared = gateway.prepare_creds({"foundry": raw})
+    assert prepared["foundry"] == {"error": "Foundry region is missing or invalid."}
+
+
+def test_prepare_creds_rejects_foundry_with_both_auth_methods():
+    raw = {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678",
+           "access_token": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.sig"}
+    prepared = gateway.prepare_creds({"foundry": raw})
+    assert prepared["foundry"] == {"error": "Foundry credentials need exactly one of api_key or access_token."}
+
+
+def test_prepare_creds_rejects_foundry_with_neither_auth_method():
+    raw = {"resource": "my-resource", "region": "eastus"}
+    prepared = gateway.prepare_creds({"foundry": raw})
+    assert prepared["foundry"] == {"error": "Foundry credentials need an api_key or access_token."}
+
+
+@pytest.mark.parametrize("bad_value", ["fake-api-key\n", " fake-api-key", "fake-api\tkey"])
+def test_prepare_creds_rejects_foundry_api_key_with_whitespace_or_control_chars(bad_value):
+    raw = {"resource": "my-resource", "region": "eastus", "api_key": bad_value}
+    prepared = gateway.prepare_creds({"foundry": raw})
+    assert prepared["foundry"] == {"error": "Foundry credentials contain whitespace or control characters."}
+
+
+def test_prepare_creds_is_idempotent_for_foundry():
+    once = gateway.prepare_creds({"foundry": FOUNDRY_API_KEY_CREDS})
+    twice = gateway.prepare_creds(once)
+    assert twice == once
+
+
+@patch("gateway.foundry.call_model", return_value=FAKE_RESULT)
+def test_call_backend_foundry_passes_backend_creds(mock_call):
+    gateway.call_backend("foundry", "openai/gpt-5", MESSAGES, {"foundry": FOUNDRY_API_KEY_CREDS})
+    args, _ = mock_call.call_args
+    assert args == ("openai/gpt-5", MESSAGES, FOUNDRY_API_KEY_CREDS)
+
+
+def test_call_backend_incomplete_foundry_creds_raise_gateway_error():
+    with pytest.raises(GatewayError):
+        gateway.call_backend("foundry", "openai/gpt-5", MESSAGES, {"foundry": {"resource": "my-resource"}})
+
+
+@patch("gateway.foundry.call_model")
+def test_call_backend_foundry_rejects_malicious_resource_before_dispatch(mock_call):
+    raw = {"resource": "evil.com#", "region": "eastus", "api_key": "fake-api-key-12345678"}
+    with pytest.raises(GatewayError):
+        gateway.call_backend("foundry", "openai/gpt-5", MESSAGES, {"foundry": raw})
+    mock_call.assert_not_called()

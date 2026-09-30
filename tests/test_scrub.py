@@ -49,3 +49,25 @@ def test_scrub_leaves_short_or_non_secret_values_alone():
 
 def test_scrub_without_creds_still_applies_patterns():
     assert scrub.scrub("nothing secret here") == "nothing secret here"
+
+
+def test_scrub_redacts_foundry_api_key_by_exact_value():
+    creds = {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-foundry-api-key-1234"}}
+    out = scrub.scrub("request failed using fake-foundry-api-key-1234 today", creds)
+    assert "fake-foundry-api-key-1234" not in out
+
+
+def test_scrub_redacts_foundry_access_token_by_exact_value():
+    token = "some-nonstandard-entra-token-value-1234567890"
+    creds = {"foundry": {"resource": "my-resource", "region": "eastus", "access_token": token}}
+    out = scrub.scrub(f"authorization failed for {token}", creds)
+    assert token not in out
+
+
+def test_scrub_redacts_jwt_shaped_bearer_tokens_without_creds():
+    jwt = ("eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9."
+           "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0."
+           "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U")
+    out = scrub.scrub(f"Authorization: Bearer {jwt}")
+    assert jwt not in out
+    assert "[REDACTED]" in out

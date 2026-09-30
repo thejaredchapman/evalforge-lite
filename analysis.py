@@ -14,7 +14,8 @@ _PROVIDER_ALIASES = {"openai": "openai", "anthropic": "anthropic", "google": "go
 _PROVIDER_STEMS = {"openai": ["OpenAI", "GPT", "ChatGPT"], "anthropic": ["Anthropic", "Claude"],
                    "google": ["Google", "Gemini", "Gemma"], "meta-llama": ["Meta", "Llama"]}
 _OFF_CATALOG_VENDORS = ["DeepSeek", "Mistral", "Mixtral", "Qwen", "Grok", "xAI", "Cohere"]
-_BACKEND_LABEL_TERMS = ["OpenRouter", "Amazon Bedrock", "Bedrock", "Google Vertex AI", "Vertex AI"]
+_BACKEND_LABEL_TERMS = ["OpenRouter", "Amazon Bedrock", "Bedrock", "Google Vertex AI", "Vertex AI",
+                        "Microsoft Foundry", "Foundry"]
 
 
 def _mean(values):

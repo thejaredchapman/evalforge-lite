@@ -3,16 +3,21 @@ import re
 
 import bedrock
 import catalog
+import foundry
 import openrouter
 import vertex
 from errors import GatewayError
 
-BACKENDS = ("openrouter", "bedrock", "vertex")
-BACKEND_LABELS = {"openrouter": "OpenRouter", "bedrock": "Bedrock", "vertex": "Vertex AI"}
+BACKENDS = ("openrouter", "bedrock", "vertex", "foundry")
+BACKEND_LABELS = {"openrouter": "OpenRouter", "bedrock": "Bedrock", "vertex": "Vertex AI",
+                   "foundry": "Microsoft Foundry"}
 
 _BEDROCK_REGION_RE = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d$")
 _VERTEX_REGION_RE = re.compile(r"^(global|[a-z]+-[a-z]+\d+)$")
 _VERTEX_PROJECT_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+_FOUNDRY_RESOURCE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
+_FOUNDRY_REGION_RE = re.compile(r"^[a-z]+[0-9]*$")
+_FOUNDRY_REGION_MAX_LEN = 30
 
 
 def parse_target(target):
@@ -93,6 +98,30 @@ def _prepare_vertex(raw):
     raise GatewayError("Vertex credentials need an access_token or service_account_json.")
 
 
+def _prepare_foundry(raw):
+    if not isinstance(raw, dict):
+        raise GatewayError("Foundry credentials must be an object.")
+    resource = raw.get("resource")
+    if not _nonempty_str(resource) or not _FOUNDRY_RESOURCE_RE.match(resource):
+        raise GatewayError("Foundry resource name is missing or invalid.")
+    region = raw.get("region")
+    if (not _nonempty_str(region) or len(region) > _FOUNDRY_REGION_MAX_LEN
+            or not _FOUNDRY_REGION_RE.match(region)):
+        raise GatewayError("Foundry region is missing or invalid.")
+    _check_clean_fields(
+        raw, ("api_key", "access_token"), "Foundry credentials contain whitespace or control characters.",
+    )
+    has_key = _nonempty_str(raw.get("api_key"))
+    has_token = _nonempty_str(raw.get("access_token"))
+    if has_key and has_token:
+        raise GatewayError("Foundry credentials need exactly one of api_key or access_token.")
+    if has_key:
+        return {"resource": resource, "region": region, "api_key": raw["api_key"]}
+    if has_token:
+        return {"resource": resource, "region": region, "access_token": raw["access_token"]}
+    raise GatewayError("Foundry credentials need an api_key or access_token.")
+
+
 def prepare_creds(creds):
     """Validate creds once per run and mint any tokens. Idempotent on its own output."""
     creds = creds if isinstance(creds, dict) else {}
@@ -104,7 +133,8 @@ def prepare_creds(creds):
             prepared["openrouter"] = creds["openrouter"]
         else:
             prepared["openrouter"] = {"error": "OpenRouter credentials contain whitespace or control characters."}
-    for backend, prepare in (("bedrock", _prepare_bedrock), ("vertex", _prepare_vertex)):
+    for backend, prepare in (("bedrock", _prepare_bedrock), ("vertex", _prepare_vertex),
+                              ("foundry", _prepare_foundry)):
         raw = creds.get(backend)
         if raw is None:
             continue
@@ -168,7 +198,9 @@ def call_backend(backend, native_model_id, messages, creds, timeout=60):
         return openrouter.call_model(native_model_id, messages, api_key=backend_creds, timeout=timeout)
     if backend == "bedrock":
         return bedrock.call_model(native_model_id, messages, backend_creds, timeout=timeout)
-    return vertex.call_model(native_model_id, messages, backend_creds, timeout=timeout)
+    if backend == "vertex":
+        return vertex.call_model(native_model_id, messages, backend_creds, timeout=timeout)
+    return foundry.call_model(native_model_id, messages, backend_creds, timeout=timeout)
 
 
 def estimate_cost(price, input_tokens, output_tokens):

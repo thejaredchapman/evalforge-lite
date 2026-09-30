@@ -9,12 +9,14 @@ _PATTERNS = [
     re.compile(r"\bABSK[A-Za-z0-9+/=]{20,}"),
     re.compile(r"\bbedrock-api-key-[A-Za-z0-9+/=._-]{20,}"),
     re.compile(r"\bya29\.[A-Za-z0-9._-]+"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
 ]
 
 _SECRET_FIELDS = {
     "bedrock": ("api_key", "access_key_id", "secret_access_key", "session_token"),
     "vertex": ("access_token", "service_account_json"),
+    "foundry": ("api_key", "access_token"),
 }
 
 _MIN_SECRET_LEN = 8

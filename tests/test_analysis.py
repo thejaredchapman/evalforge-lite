@@ -109,3 +109,11 @@ def test_advice_naming_off_catalog_model_is_dropped_end_to_end(mock_verdict, moc
 
     out = analysis.build_run_result(results, targets, {"openrouter": "sk-or-v1-test"}, "openrouter")
     assert out["advice"] == ""
+
+
+@patch("analysis.judge.explain_recommendations", return_value="")
+@patch("analysis.judge.overall_verdict", return_value={"winner": None, "rationale": ""})
+def test_explainer_allowed_terms_include_foundry_label(mock_verdict, mock_explain):
+    analysis.build_run_result(RESULTS, TARGETS, {"openrouter": "k"}, "openrouter")
+    allowed = mock_explain.call_args[1]["allowed_terms"]
+    assert "Microsoft Foundry" in allowed
