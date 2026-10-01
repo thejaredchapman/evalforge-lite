@@ -13,7 +13,18 @@ const state = {
                      // can be redrawn with correct colors if the theme changes
 };
 
-const BACKEND_LABELS = { openrouter: "OpenRouter", bedrock: "Amazon Bedrock", vertex: "Google Vertex AI" };
+const BACKEND_LABELS = { openrouter: "OpenRouter", bedrock: "Amazon Bedrock", vertex: "Google Vertex AI", foundry: "Microsoft Foundry" };
+
+const PROVIDER_LINKS = {
+  openrouter: { status: "https://status.openrouter.ai",
+                report: "https://openrouter.ai/docs/guides/overview/report-feedback" },
+  bedrock: { status: "https://health.aws.amazon.com/health/status",
+             report: "https://console.aws.amazon.com/support/home" },
+  vertex: { status: "https://status.cloud.google.com",
+            report: "https://cloud.google.com/support-hub" },
+  foundry: { status: "https://azure.status.microsoft/en-us/status",
+             report: "https://azure.microsoft.com/en-us/support/create-ticket" },
+};
 
 const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
@@ -28,7 +39,7 @@ function escapeHtml(s) {
 const ISSUES_URL = "https://github.com/thejaredchapman/evalforge-lite/issues/new";
 const MAX_ISSUE_DETAILS = 4000;
 
-function showErrorDialog(title, summary, details) {
+function showErrorDialog(title, summary, details, backend) {
   const dialog = document.getElementById("error-dialog");
   document.getElementById("error-dialog-title").textContent = title;
   document.getElementById("error-dialog-summary").textContent = summary;
@@ -44,6 +55,21 @@ function showErrorDialog(title, summary, details) {
     body: `**What happened:** ${summary}\n\n**Error details:**\n\`\`\`\n${issueDetails}\n\`\`\`\n\n**Steps to reproduce:**\n1. \n\n**Backend(s) and model(s):**\n`,
   });
   document.getElementById("error-dialog-report").href = `${ISSUES_URL}?${params}`;
+
+  const statusLink = document.getElementById("error-dialog-status-link");
+  const providerReportLink = document.getElementById("error-dialog-provider-report-link");
+  const links = backend && PROVIDER_LINKS[backend];
+  if (links) {
+    statusLink.href = links.status;
+    statusLink.textContent = `Check ${BACKEND_LABELS[backend]} status`;
+    statusLink.hidden = false;
+    providerReportLink.href = links.report;
+    providerReportLink.textContent = `Report to ${BACKEND_LABELS[backend]}`;
+    providerReportLink.hidden = false;
+  } else {
+    statusLink.hidden = true;
+    providerReportLink.hidden = true;
+  }
 
   if (!dialog.open) dialog.showModal();
 }
@@ -71,10 +97,13 @@ function showCellErrors(run) {
   const details = failures
     .map((f) => `Model: ${f.modelId}\nPrompt: ${f.prompt}\n${f.error}`)
     .join("\n\n----------\n\n");
+  const backends = new Set(failures.map((f) => targetBackend(f.modelId)));
+  const backend = backends.size === 1 ? [...backends][0] : null;
   showErrorDialog(
     failures.length === 1 ? "A model call failed" : `${failures.length} model calls failed`,
     "The run finished, but some models returned errors. The provider's full response is below.",
     details,
+    backend,
   );
 }
 
@@ -170,6 +199,18 @@ function buildCreds() {
       creds.vertex = { project: vertexProject, region, service_account_json: state.vertexServiceAccount };
     }
   }
+
+  const foundryResource = fieldValue("foundry-resource");
+  if (foundryResource) {
+    const region = fieldValue("foundry-region");
+    if (checkedValue("foundry-auth") === "api_key") {
+      const apiKey = fieldValue("foundry-api-key");
+      if (apiKey) creds.foundry = { resource: foundryResource, region, api_key: apiKey };
+    } else {
+      const accessToken = fieldValue("foundry-access-token");
+      if (accessToken) creds.foundry = { resource: foundryResource, region, access_token: accessToken };
+    }
+  }
   return creds;
 }
 
@@ -183,6 +224,94 @@ function missingBackends(creds) {
   const needed = new Set(Array.from(state.selectedModels).map(targetBackend));
   needed.add(judgeBackend());
   return Array.from(needed).filter((backend) => !creds[backend]);
+}
+
+function populateRegionSelect(selectId, regions) {
+  const select = document.getElementById(selectId);
+  const previous = select.value;
+  select.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a region";
+  select.appendChild(placeholder);
+  regions.forEach((region) => {
+    const option = document.createElement("option");
+    option.value = region.id;
+    option.textContent = `${region.label} (${region.id})`;
+    select.appendChild(option);
+  });
+  if (regions.some((r) => r.id === previous)) select.value = previous;
+}
+
+function selectedRegion(backend) {
+  const el = document.getElementById(`${backend}-region`);
+  return el ? el.value : "";
+}
+
+function regionWarnings() {
+  const warnings = [];
+  state.selectedModels.forEach((target) => {
+    const { backend, modelId } = splitTarget(target);
+    if (backend === "openrouter") return;
+    const region = selectedRegion(backend);
+    if (!region) return;
+    const model = catalogModel(modelId);
+    const route = model && model.routes && model.routes[backend];
+    const regions = route && route.regions;
+    if (!regions || regions.includes(region)) return;
+    warnings.push({ target, backend, region, regions });
+  });
+  return warnings;
+}
+
+function warningText(w) {
+  return `Not listed in ${w.region} — available in ${w.regions.join(", ")}. Switch region in the ${BACKEND_LABELS[w.backend]} tab.`;
+}
+
+function syncRegionWarnings() {
+  const warnings = regionWarnings();
+  const warningByTarget = new Map(warnings.map((w) => [w.target, w]));
+
+  document.querySelectorAll(".backend-chip[data-target]").forEach((chip) => {
+    const target = chip.dataset.target;
+    const warning = warningByTarget.get(target);
+    let markEl = chip.querySelector(".region-warning-mark");
+    if (warning) {
+      if (!markEl) {
+        markEl = document.createElement("span");
+        markEl.className = "region-warning-mark";
+        markEl.textContent = "⚠";
+        chip.appendChild(markEl);
+      }
+      chip.title = warningText(warning);
+    } else if (markEl) {
+      markEl.remove();
+      chip.title = `Also run via ${BACKEND_LABELS[targetBackend(target)]}`;
+    }
+  });
+
+  const lineEl = document.getElementById("region-warning-line");
+  if (warnings.length === 0) {
+    lineEl.hidden = true;
+    lineEl.textContent = "";
+    return;
+  }
+  lineEl.hidden = false;
+  lineEl.innerHTML = "";
+  const intro = document.createElement("p");
+  intro.textContent = `${warnings.length} selected model${warnings.length > 1 ? "s" : ""} may not be available in your chosen region:`;
+  lineEl.appendChild(intro);
+  warnings.forEach((w) => {
+    const p = document.createElement("p");
+    p.textContent = warningText(w);
+    lineEl.appendChild(p);
+  });
+  const link = document.createElement("a");
+  link.href = "/availability";
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = "See full availability";
+  lineEl.appendChild(link);
 }
 
 function setupCredsPanel() {
@@ -208,7 +337,7 @@ function setupCredsPanel() {
       next.focus();
     });
   });
-  ["bedrock", "vertex"].forEach((group) => {
+  ["bedrock", "vertex", "foundry"].forEach((group) => {
     document.querySelectorAll(`input[name="${group}-auth"]`).forEach((radio) => {
       radio.addEventListener("change", () => {
         document.querySelectorAll(`.auth-fields[data-auth-group="${group}"]`).forEach((el) => {
@@ -279,7 +408,13 @@ async function loadCatalogAndModels() {
   renderFrontier(catalogData.frontier);
   renderProviders(catalogData.providers);
   populateModelsDatalist(state.allModels);
+  if (catalogData.regions) {
+    populateRegionSelect("bedrock-region", catalogData.regions.bedrock.regions);
+    populateRegionSelect("vertex-region", catalogData.regions.vertex.regions);
+    populateRegionSelect("foundry-region", catalogData.regions.foundry.regions);
+  }
   updateSelectionMeta();
+  syncRegionWarnings();
 }
 
 function populateModelsDatalist(models) {
@@ -365,7 +500,7 @@ function modelBadge(model, color) {
   backends.forEach((backend) => {
     const chip = document.createElement("span");
     chip.className = "backend-chip";
-    chip.textContent = backend === "bedrock" ? "Bedrock" : "Vertex";
+    chip.textContent = backend === "bedrock" ? "Bedrock" : backend === "vertex" ? "Vertex" : "Foundry";
     chip.title = `Also run via ${BACKEND_LABELS[backend]}`;
     chip.dataset.target = `${model.id}@${backend}`;
     chip.addEventListener("click", () => toggleBackendTarget(`${model.id}@${backend}`, chip));
@@ -387,6 +522,7 @@ function toggleBackendTarget(target, chip) {
   }
   syncSelectionVisuals();
   updateSelectionMeta();
+  syncRegionWarnings();
 }
 
 async function toggleModel(modelId, el) {
@@ -394,6 +530,7 @@ async function toggleModel(modelId, el) {
     state.selectedModels.delete(modelId);
     syncSelectionVisuals();
     updateSelectionMeta();
+    syncRegionWarnings();
   } else {
     if (atCap()) {
       document.getElementById("run-status").textContent = capMessage();
@@ -402,6 +539,7 @@ async function toggleModel(modelId, el) {
     state.selectedModels.add(modelId);
     syncSelectionVisuals();
     updateSelectionMeta();
+    syncRegionWarnings();
     const resp = await fetch(`/api/suggest?model_id=${encodeURIComponent(modelId)}`);
     const data = await resp.json();
     if (data.suggestions.length) {
@@ -424,6 +562,7 @@ function addCustomModel() {
   input.value = "";
   renderCustomModels();
   updateSelectionMeta();
+  syncRegionWarnings();
 }
 
 function removeCustomModel(modelId) {
@@ -431,6 +570,7 @@ function removeCustomModel(modelId) {
   state.customModels = state.customModels.filter((id) => id !== modelId);
   renderCustomModels();
   updateSelectionMeta();
+  syncRegionWarnings();
 }
 
 function renderCustomModels() {
@@ -822,6 +962,7 @@ function tryIt(oldTarget, newTarget) {
   }
   syncSelectionVisuals();
   updateSelectionMeta();
+  syncRegionWarnings();
   status.textContent = `Swapped ${oldTarget} → ${newTarget}. Click Run comparison to test it.`;
 }
 
@@ -945,7 +1086,7 @@ function renderResults(data) {
         detailsButton.textContent = "Details";
         detailsButton.setAttribute("aria-label", `Show error details for ${modelId}`);
         detailsButton.addEventListener("click", () => {
-          showErrorDialog(`${modelId} failed`, `Prompt: ${row.test_case.prompt}`, cell.error);
+          showErrorDialog(`${modelId} failed`, `Prompt: ${row.test_case.prompt}`, cell.error, targetBackend(modelId));
         });
         cellEl.appendChild(detailsButton);
       } else {
@@ -999,6 +1140,9 @@ document.getElementById("priority").addEventListener("change", () => {
   if (run) renderCompareGrid(run);
 });
 document.getElementById("repeats").addEventListener("change", updateSelectionMeta);
+["bedrock-region", "vertex-region", "foundry-region"].forEach((id) => {
+  document.getElementById(id).addEventListener("change", syncRegionWarnings);
+});
 
 function toggleMenu(open) {
   document.getElementById("mobile-menu").classList.toggle("open", open);

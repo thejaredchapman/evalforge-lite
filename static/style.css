@@ -439,3 +439,29 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
 .results-cell .status-fail { white-space: pre-wrap; word-break: break-word; }
 .error-details-button { margin-left: 8px; padding: 2px 8px; font-size: 0.8rem; }
 .page-footer { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }
+
+.top-links { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: -12px 0 20px; font-size: 12px; }
+.top-links a { color: var(--muted); text-decoration: none; }
+.top-links a:hover { color: #10A37F; }
+.status-menu { position: relative; }
+.status-menu summary { cursor: pointer; color: var(--muted); list-style: none; }
+.status-menu summary::-webkit-details-marker { display: none; }
+.status-menu[open] summary { color: var(--fg); }
+.status-menu-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 15;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  min-width: 160px;
+  box-shadow: 0 4px 12px var(--overlay);
+}
+.status-menu-panel a { display: block; padding: 4px 0; color: var(--fg); text-decoration: none; }
+.status-menu-panel a:hover { color: #10A37F; }
+.region-warning-line { font-size: 12px; color: var(--status-fail); margin: 0 0 8px; }
+.region-warning-line a { color: inherit; }
+.region-warning-line p { margin: 4px 0; }
+.region-warning-mark { margin-left: 3px; }
