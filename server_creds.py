@@ -93,3 +93,21 @@ def public_summary():
     for backend, value in load().items():
         summary[backend] = {"region": value["region"]} if isinstance(value, dict) and "region" in value else {}
     return summary
+
+
+def identifiers():
+    """Non-secret-looking but private server-held values (Vertex project id and service-account
+    client_email, Foundry resource name) that must still never reach a client."""
+    held = load()
+    out = []
+    if "vertex" in held:
+        out.append(held["vertex"]["project"])
+        try:
+            email = json.loads(held["vertex"]["service_account_json"]).get("client_email")
+        except ValueError:
+            email = None
+        if isinstance(email, str):
+            out.append(email)
+    if "foundry" in held:
+        out.append(held["foundry"]["resource"])
+    return [v for v in out if len(v) >= 3]

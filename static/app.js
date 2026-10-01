@@ -716,7 +716,7 @@ async function evaluatePrompt(idx) {
   const data = await readJson(resp);
 
   if (!resp.ok || !data || data.score === null) {
-    const message = (data && (data.error || data.feedback)) || `HTTP ${resp.status} ${resp.statusText}`;
+    const message = (data && (data.message || data.error || data.feedback)) || `HTTP ${resp.status} ${resp.statusText}`;
     feedbackEl.textContent = message;
     if (!resp.ok || (data && data.error)) {
       showErrorDialog("Prompt evaluation failed", "The prompt judge could not score this prompt.", message);

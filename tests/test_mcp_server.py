@@ -461,3 +461,15 @@ def test_run_comparison_error_scrubs_server_key(monkeypatch):
     with patch("mcp_server.runner.run", side_effect=Exception(f"failed using key {MCP_SERVER_KEY}")):
         result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"])
     assert MCP_SERVER_KEY not in result["error"] and "[REDACTED]" in result["error"]
+
+
+def test_run_comparison_error_hides_server_held_foundry_resource(monkeypatch):
+    monkeypatch.setenv("FOUNDRY_RESOURCE", "acme-secret-resource")
+    monkeypatch.setenv("FOUNDRY_REGION", "eastus2")
+    monkeypatch.setenv("FOUNDRY_API_KEY", "fk")
+    err = "401 Client Error for url: https://acme-secret-resource.services.ai.azure.com/models"
+    with patch("mcp_server.runner.run", side_effect=Exception(err)):
+        result = mcp_server.run_comparison(
+            test_cases=[{"prompt": "q1"}], models=["openai/gpt-5@foundry"], judge_backend="foundry",
+        )
+    assert "acme-secret-resource" not in json.dumps(result)

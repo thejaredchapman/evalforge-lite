@@ -121,7 +121,7 @@ def api_evaluate_prompt():
         return _with_session_cookie(_error_response("Invalid judge_backend.", 400), session_id)
     creds, creds_error = gateway.check_run_creds(raw_creds, [], judge_backend)
     if creds_error:
-        return _with_session_cookie(_error_response(creds_error, 400), session_id)
+        return _with_session_cookie(_error_response(scrub.scrub(creds_error, raw_creds), 400), session_id)
 
     limit_result = limiter.check_and_record(f"evaluate:{session_id}", time.time())
     if not limit_result["allowed"]:
@@ -188,7 +188,7 @@ def api_run():
 
     creds, creds_error = gateway.check_run_creds(raw_creds, model_ids, judge_backend)
     if creds_error:
-        return _with_session_cookie(_error_response(creds_error, 400), session_id)
+        return _with_session_cookie(_error_response(scrub.scrub(creds_error, raw_creds), 400), session_id)
 
     limit_result = limiter.check_and_record(session_id, time.time())
     if not limit_result["allowed"]:

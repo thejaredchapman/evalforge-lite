@@ -1,6 +1,8 @@
 import json
 import re
 
+import server_creds
+
 REDACTED = "[REDACTED]"
 
 _PATTERNS = [
@@ -53,7 +55,8 @@ def secret_values(creds):
 
 
 def scrub(message, creds=None):
-    for value in sorted(secret_values(creds), key=len, reverse=True):
+    values = secret_values(creds) + server_creds.identifiers()
+    for value in sorted(values, key=len, reverse=True):
         message = message.replace(value, REDACTED)
     for pattern in _PATTERNS:
         message = pattern.sub(REDACTED, message)

@@ -71,3 +71,27 @@ def test_scrub_redacts_jwt_shaped_bearer_tokens_without_creds():
     out = scrub.scrub(f"Authorization: Bearer {jwt}")
     assert jwt not in out
     assert "[REDACTED]" in out
+
+
+def test_scrub_redacts_server_held_foundry_resource(monkeypatch):
+    monkeypatch.setenv("FOUNDRY_RESOURCE", "acme-secret-resource")
+    monkeypatch.setenv("FOUNDRY_REGION", "eastus2")
+    monkeypatch.setenv("FOUNDRY_API_KEY", "fk")
+    out = scrub.scrub("401 Client Error for url: https://acme-secret-resource.services.ai.azure.com/x", {})
+    assert "acme-secret-resource" not in out
+    assert "[REDACTED]" in out
+
+
+def test_scrub_redacts_server_held_vertex_project_and_client_email(monkeypatch):
+    sa = json.dumps({"client_email": "svc@acme-proj-123.iam.gserviceaccount.com", "private_key": "x"})
+    monkeypatch.setenv("VERTEX_PROJECT", "acme-proj-123")
+    monkeypatch.setenv("VERTEX_SERVICE_ACCOUNT_JSON", sa)
+    out = scrub.scrub("403 for /projects/acme-proj-123/ by svc@acme-proj-123.iam.gserviceaccount.com", {})
+    assert "acme-proj-123" not in out
+    assert "svc@" not in out
+
+
+def test_scrub_keeps_user_supplied_resource_when_nothing_server_held():
+    creds = {"foundry": {"resource": "my-own-resource", "region": "eastus", "api_key": "user-key-12345678"}}
+    out = scrub.scrub("failed https://my-own-resource.services.ai.azure.com/x", creds)
+    assert "my-own-resource" in out

@@ -87,7 +87,7 @@ def evaluate_prompt(prompt: str, api_key: str = "", creds: dict | None = None,
         return {"error": "Invalid judge_backend."}
     prepared, creds_error = gateway.check_run_creds(raw_creds, [], judge_backend)
     if creds_error:
-        return {"error": creds_error}
+        return {"error": scrub.scrub(creds_error, raw_creds)}
     limit_result = limiter.check_and_record(_EVALUATE_RATE_LIMIT_KEY, time.time())
     if not limit_result["allowed"]:
         return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
@@ -131,7 +131,7 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
         return {"error": "repeats must be 1, 2, or 3."}
     prepared, creds_error = gateway.check_run_creds(raw_creds, models, judge_backend)
     if creds_error:
-        return {"error": creds_error}
+        return {"error": scrub.scrub(creds_error, raw_creds)}
 
     limit_result = limiter.check_and_record(_RATE_LIMIT_KEY, time.time())
     if not limit_result["allowed"]:

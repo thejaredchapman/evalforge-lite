@@ -711,3 +711,16 @@ def test_api_evaluate_prompt_uses_server_key_and_counts_against_cap(mock_evaluat
     second = client.post("/api/evaluate-prompt", json={"prompt": "hello again"})
     assert second.status_code == 429
     assert second.get_json()["message"].startswith("The server's shared usage limit")
+
+
+def test_api_run_error_hides_server_held_foundry_resource(monkeypatch):
+    monkeypatch.setenv("FOUNDRY_RESOURCE", "acme-secret-resource")
+    monkeypatch.setenv("FOUNDRY_REGION", "eastus2")
+    monkeypatch.setenv("FOUNDRY_API_KEY", "fk")
+    err = "401 Client Error for url: https://acme-secret-resource.services.ai.azure.com/models"
+    with patch("app.runner.run", side_effect=Exception(err)):
+        resp = _client().post("/api/run", json={
+            "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5@foundry"], "judge_backend": "foundry",
+        })
+    assert resp.status_code == 503
+    assert "acme-secret-resource" not in resp.get_data(as_text=True)

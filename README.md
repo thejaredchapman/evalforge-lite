@@ -178,7 +178,7 @@ check) that uses a server-held key. The default is **50 per rolling 24 hours,
 shared by everyone**. When it is reached, people see "The server's shared
 usage limit has been reached. Please try again later."
 
-- Change it with `SERVER_KEY_DAILY_CAP`. `0` turns server-key use off entirely.
+- Change it with `SERVER_KEY_DAILY_CAP`. `0` blocks every call that needs a server-held backend. To let users enter their own keys again, unset that backend's variables.
 - The usual per-browser limit (3 runs per 8 hours) still applies on top.
 - The count lives in memory: restarting the app resets it, and if you run
   several worker processes each keeps its own count (the included
@@ -208,6 +208,7 @@ passing `creds`.
   (check the table), the app was not restarted, or — for Vertex — the JSON is
   not valid. Partly configured backends are ignored on purpose.
 - **"Shared usage limit has been reached".** Wait, or raise `SERVER_KEY_DAILY_CAP`.
+- **The app uses a key you did not set up.** If you already export `OPENROUTER_API_KEY` (or the AWS/other variables above) in your shell for other tools, this app will pick it up and use it as a server key. Unset it first if you did not mean that.
 - **Bedrock still asks for a region.** `BEDROCK_REGION` must be set along with a key.
 
 
@@ -375,7 +376,7 @@ secret_access_key, session_token?}, "vertex"?: {project, region, access_token}
 | {project, region, service_account_json}, "foundry"?: {resource, region, api_key}
 | {resource, region, access_token}}` — plus a `judge_backend` (default
 `"openrouter"`) picking which backend runs the judge and policy gate. Creds for
-the judge backend are always required, and malformed creds for any backend the
+the judge backend are always required (unless the operator holds that backend's credentials on the server, see [Server-side keys](#server-side-keys-optional-for-operators)), and malformed creds for any backend the
 call uses are rejected up front, before the call counts against the rate limit. The
 legacy `api_key` string argument still works and is treated as an
 OpenRouter key (equivalent to `creds={"openrouter": api_key}`).
