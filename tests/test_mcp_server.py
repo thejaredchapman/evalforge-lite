@@ -1,7 +1,9 @@
 import base64
 import io
+import json
 from unittest.mock import patch
 
+import gateway
 import limiter
 import mcp_server
 
@@ -374,3 +376,43 @@ def test_run_comparison_scrubs_foundry_api_key_on_error():
             judge_backend="foundry",
         )
     assert secret not in result["error"]
+
+
+def test_run_comparison_includes_cost_and_per_cell_evaluation():
+    with patch("mcp_server.runner.run") as mock_run, patch("mcp_server.judge.overall_verdict") as mock_verdict:
+        mock_run.return_value = [{
+            "test_case": {"prompt": "q1"},
+            "cells": {
+                "openai/gpt-5": {
+                    "model_id": "openai/gpt-5", "blocked": False, "error": None,
+                    "response_text": "answer", "latency_ms": 10, "cost_usd": 0.01, "tokens": 5,
+                    "checks": [], "judge_score": None, "judge_rationale": None,
+                    "evaluation": {"available": True, "overall": 4},
+                }
+            },
+        }]
+        mock_verdict.return_value = {"winner": "openai/gpt-5", "rationale": "best"}
+        result = mcp_server.run_comparison(
+            test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"], api_key="sk-or-v1-test",
+        )
+    assert result["cost"] == {"model_usd": 0.0, "judge_usd": 0.0, "total_usd": 0.0, "judge_calls": 0}
+    assert result["results"][0]["cells"]["openai/gpt-5"]["evaluation"]["overall"] == 4
+
+
+def test_run_comparison_evaluation_gateway_error_never_leaks_secret():
+    secret = "sk-or-v1-mcpevalsecret1234567890"
+
+    def _fake_call_target(target, messages, creds, timeout=60):
+        return {"text": "answer", "latency_ms": 10, "cost_usd": 0.0, "tokens": 5, "output_tokens": 3}
+
+    with patch("gateway.call_target", side_effect=_fake_call_target), \
+         patch("judge.gateway.call_backend", side_effect=gateway.GatewayError(f"token {secret} rejected")):
+        result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"], api_key=secret)
+
+    serialized = json.dumps(result)
+    assert secret not in serialized
+    assert result["results"][0]["cells"]["openai/gpt-5"]["evaluation"] == {
+        "available": False, "reason": "Evaluation unavailable.",
+    }
+    runs = mcp_server.list_runs()
+    assert secret not in json.dumps(runs)

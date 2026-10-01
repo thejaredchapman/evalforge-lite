@@ -5,6 +5,8 @@ from unittest.mock import patch
 import pytest
 
 import app as app_module
+import gateway
+import judge
 import limiter
 
 
@@ -534,3 +536,57 @@ def test_availability_page_returns_200():
     resp = _client().get("/availability")
     assert resp.status_code == 200
     assert b"availability-table" in resp.data
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_includes_cost_and_per_cell_evaluation(mock_verdict, mock_run):
+    mock_run.return_value = [{
+        "test_case": {"prompt": "q1"},
+        "cells": {
+            "openai/gpt-5": {
+                "model_id": "openai/gpt-5", "blocked": False, "error": None,
+                "response_text": "answer", "latency_ms": 10, "cost_usd": 0.01, "tokens": 5,
+                "checks": [], "judge_score": None, "judge_rationale": None,
+                "evaluation": {
+                    "available": True, "overall": 4,
+                    "answered": {"score": 5, "explanation": "ok"}, "quality": {"score": 4, "explanation": "ok"},
+                    "instruction_following": {"score": 4, "explanation": "ok"},
+                    "completeness": {"score": 4, "explanation": "ok"}, "helpfulness": {"score": 4, "explanation": "ok"},
+                    "safety": {"score": 5, "explanation": "ok"}, "strengths": [], "weaknesses": [], "reasoning": "ok",
+                },
+            }
+        },
+    }]
+    mock_verdict.return_value = {"winner": "openai/gpt-5", "rationale": "best"}
+
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-test",
+    })
+
+    body = resp.get_json()
+    assert resp.status_code == 200
+    assert body["cost"] == {"model_usd": 0.0, "judge_usd": 0.0, "total_usd": 0.0, "judge_calls": 0}
+    assert body["results"][0]["cells"]["openai/gpt-5"]["evaluation"]["overall"] == 4
+
+
+def test_api_run_evaluation_gateway_error_never_leaks_secret(caplog):
+    secret = "sk-or-v1-evalsecret1234567890"
+
+    def _fake_call_target(target, messages, creds, timeout=60):
+        return {"text": "answer", "latency_ms": 10, "cost_usd": 0.0, "tokens": 5, "output_tokens": 3}
+
+    with patch("gateway.call_target", side_effect=_fake_call_target), \
+         patch("judge.gateway.call_backend", side_effect=gateway.GatewayError(f"token {secret} rejected")):
+        resp = _client().post("/api/run", json={
+            "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"], "api_key": secret,
+        })
+
+    assert resp.status_code == 200
+    assert secret not in resp.get_data(as_text=True)
+    body = resp.get_json()
+    cell = body["results"][0]["cells"]["openai/gpt-5"]
+    assert cell["evaluation"] == {"available": False, "reason": "Evaluation unavailable."}
+    assert secret not in caplog.text
+    history_resp = _client().get("/api/runs")
+    assert secret not in history_resp.get_data(as_text=True)

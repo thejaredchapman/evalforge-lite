@@ -9,6 +9,7 @@ import analysis
 import availability
 import catalog
 import config
+import costs
 import gateway
 import grading
 import judge
@@ -96,7 +97,9 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
     judge_backend picks which backend runs the judge and policy gate.
     At most 4 models. priority (balanced|quality|fastest|cheapest) ranks the results;
     repeats (1-3) re-sends each prompt for timing accuracy. Returns suggestions (same
-    provider and backend only), advice, ranking, and best_for_priority.
+    provider and backend only), advice, ranking, and best_for_priority, plus a per-run
+    `cost` total and, per cell, an `evaluation` (answered/quality/instruction_following/
+    completeness/helpfulness/safety scores, strengths, weaknesses, reasoning, overall).
     """
     if not isinstance(models, list) or any(not isinstance(m, str) or not m.strip() for m in models):
         return {"error": "Model ids must be non-empty strings."}
@@ -120,9 +123,10 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
         return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
 
     try:
+        meter = costs.CostMeter()
         results = runner.run(test_cases, models, creds=prepared, policy_text=_policy_text,
-                             judge_backend=judge_backend, repeats=repeats)
-        run_result = analysis.build_run_result(results, models, prepared, judge_backend)
+                             judge_backend=judge_backend, repeats=repeats, meter=meter)
+        run_result = analysis.build_run_result(results, models, prepared, judge_backend, meter=meter)
     except Exception as e:
         return {"error": scrub.scrub(str(e), raw_creds)}
 

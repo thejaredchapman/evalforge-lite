@@ -12,6 +12,7 @@ import analysis
 import availability
 import catalog
 import config
+import costs
 import gateway
 import grading
 import judge
@@ -175,11 +176,12 @@ def api_run():
         return _with_session_cookie(resp, session_id)
 
     try:
+        meter = costs.CostMeter()
         results = runner.run(
             test_cases, model_ids, creds=creds, policy_text=policy_text, judge_backend=judge_backend,
-            repeats=repeats,
+            repeats=repeats, meter=meter,
         )
-        run_result = analysis.build_run_result(results, model_ids, creds, judge_backend)
+        run_result = analysis.build_run_result(results, model_ids, creds, judge_backend, meter=meter)
     except Exception as e:
         message = scrub.scrub(str(e), raw_creds)
         logger.error("run failed: %s", message)
