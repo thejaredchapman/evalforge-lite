@@ -4,12 +4,13 @@ from unittest.mock import patch
 from fpdf import FPDF
 
 import config
+import costs
 import policy
 
 
-def _fake_call_backend(text):
+def _fake_call_backend(text, cost=0.0):
     def _inner(backend, model_id, messages, creds, timeout=60):
-        return {"text": text, "latency_ms": 5, "cost_usd": 0.0, "tokens": 10}
+        return {"text": text, "latency_ms": 5, "cost_usd": cost, "tokens": 10}
     return _inner
 
 
@@ -101,3 +102,21 @@ def test_routes_policy_check_to_chosen_backend(mock_call):
     args, _ = mock_call.call_args
     assert args[0] == "vertex"
     assert args[1] == config.JUDGE_MODELS["vertex"]
+
+
+@patch("policy.gateway.call_backend")
+def test_check_policy_adds_judge_cost_to_meter(mock_call):
+    mock_call.side_effect = _fake_call_backend('{"violates": false, "clause": "", "reason": "ok"}', cost=0.0005)
+    meter = costs.CostMeter()
+    policy.check_policy("p", "some policy", creds={"openrouter": "sk-or-v1-test"}, meter=meter)
+    assert meter.totals()["judge_usd"] == 0.0005
+    assert meter.totals()["judge_calls"] == 1
+
+
+@patch("policy.gateway.call_backend")
+def test_check_policy_meters_cost_even_when_reply_is_unparseable(mock_call):
+    mock_call.side_effect = _fake_call_backend("not valid json", cost=0.0003)
+    meter = costs.CostMeter()
+    result = policy.check_policy("p", "some policy", creds={"openrouter": "sk-or-v1-test"}, meter=meter)
+    assert result["violates"] is True
+    assert meter.totals()["judge_usd"] == 0.0003

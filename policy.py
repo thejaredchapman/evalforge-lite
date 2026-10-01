@@ -37,7 +37,7 @@ def _extract_json(text):
     return json.loads(match.group(0))
 
 
-def check_policy(prompt, policy_text, creds, backend="openrouter", judge_model=None):
+def check_policy(prompt, policy_text, creds, backend="openrouter", judge_model=None, meter=None):
     if not policy_text:
         return {"violates": False, "clause": "", "reason": ""}
 
@@ -45,6 +45,8 @@ def check_policy(prompt, policy_text, creds, backend="openrouter", judge_model=N
         model = judge_model or config.JUDGE_MODELS[backend]
         llm_prompt = POLICY_PROMPT_TEMPLATE.format(policy=policy_text, prompt=prompt)
         result = gateway.call_backend(backend, model, [{"role": "user", "content": llm_prompt}], creds)
+        if meter is not None:
+            meter.add("judge", result.get("cost_usd", 0.0))
         parsed = _extract_json(result["text"])
         violates = bool(parsed["violates"])
         clause = str(parsed.get("clause", ""))
