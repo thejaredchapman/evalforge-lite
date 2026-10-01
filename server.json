@@ -3,7 +3,7 @@
   "name": "io.github.thejaredchapman/evalforge-lite",
   "title": "EvalForge Lite",
   "description": "Compare text LLMs across OpenRouter, Bedrock, Vertex AI and Foundry with automated grading.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "repository": {
     "url": "https://github.com/thejaredchapman/evalforge-lite",
     "source": "github"
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "evalforge-lite",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "transport": {
         "type": "stdio"
       },
