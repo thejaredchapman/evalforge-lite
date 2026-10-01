@@ -20,3 +20,14 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check JS syntax
+        run: |
+          for f in static/*.js; do node --check "$f"; done
+
+      - name: Run JS tests
+        run: node --test tests/js/picker.test.mjs
