@@ -328,6 +328,47 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
   font-size: 13px;
 }
 
+.cost-banner { font-size: 13px; }
+
+.compare-eval, .compare-latency { font-size: 11px; color: var(--muted); margin: 2px 0; }
+
+.eval-card { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; font-size: 12px; }
+.eval-card summary { cursor: pointer; font-weight: bold; }
+.eval-card-body { margin-top: 6px; }
+.eval-unavailable { color: var(--muted); font-style: italic; }
+.eval-answered-badge { display: inline-block; font-weight: bold; margin-bottom: 2px; }
+.eval-overall-badge {
+  display: inline-block; margin-top: 6px; padding: 2px 10px; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--border); font-weight: bold;
+}
+.eval-row { margin: 6px 0; }
+.eval-row-label { display: block; font-size: 11px; }
+.eval-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 2px; }
+.eval-bar-fill { height: 100%; background: var(--fg); }
+.eval-explanation { font-size: 11px; color: var(--muted); margin: 2px 0 0; }
+.eval-list-label { font-size: 11px; font-weight: bold; margin: 6px 0 2px; }
+.eval-list { margin: 0 0 0 16px; padding: 0; font-size: 11px; color: var(--muted); }
+.eval-reasoning { font-size: 11px; color: var(--muted); margin: 6px 0 0; }
+.eval-latency-note { font-size: 11px; color: var(--muted); margin: 2px 0; }
+
+.latency-panel { padding: 16px; }
+.latency-prompt-block { margin-bottom: 16px; }
+.latency-prompt-title { font-weight: bold; font-size: 13px; margin: 0 0 6px; }
+.latency-bar-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 11px; }
+.latency-bar-row.fastest .latency-bar-label { color: var(--grade-a); font-weight: bold; }
+.latency-bar-label { width: 220px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
+.latency-bar { flex: 1; height: 10px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.latency-bar-fill { height: 100%; background: var(--fg); }
+.latency-bar-row.fastest .latency-bar-fill { background: var(--grade-a); }
+.latency-bar-ms { width: 80px; flex-shrink: 0; text-align: right; color: var(--muted); }
+.latency-averages { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.latency-averages-title { font-weight: bold; font-size: 12px; margin: 0 0 4px; }
+.latency-average-line { font-size: 11px; color: var(--muted); margin: 2px 0; }
+
+@media (max-width: 600px) {
+  .latency-bar-label { width: 120px; }
+}
+
 .download-row { display: flex; gap: 10px; margin-top: 16px; }
 
 .page-footer {

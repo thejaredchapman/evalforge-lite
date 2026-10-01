@@ -904,6 +904,24 @@ function renderCompareGrid(data) {
     raw.textContent = `${latency} · ${speed} · $${(stats.total_cost_usd || 0).toFixed(4)}`;
     col.appendChild(raw);
 
+    const evalAvg = (stats.evaluation_avg || {}).overall_avg;
+    if (evalAvg !== null && evalAvg !== undefined) {
+      const evalP = document.createElement("p");
+      evalP.className = "compare-eval";
+      evalP.textContent = `Overall eval ${evalAvg.toFixed(1)}/5`;
+      col.appendChild(evalP);
+    }
+
+    const vsFastest = stats.latency_vs_fastest;
+    if (vsFastest !== null && vsFastest !== undefined) {
+      const latencyP = document.createElement("p");
+      latencyP.className = "compare-latency";
+      latencyP.textContent = vsFastest === 1
+        ? "Fastest"
+        : `${vsFastest.toFixed(1)}x slower than fastest (${Math.round(stats.avg_latency_ms)} ms)`;
+      col.appendChild(latencyP);
+    }
+
     const suggestion = (data.suggestions || {})[target];
     const sugEl = document.createElement("div");
     sugEl.className = "compare-suggestion";
@@ -1027,8 +1045,153 @@ function renderCategoryChart(grades) {
   });
 }
 
+const EVALUATION_CRITERIA = [
+  ["quality", "Quality"],
+  ["instruction_following", "Instruction following"],
+  ["completeness", "Completeness"],
+  ["helpfulness", "Helpfulness"],
+  ["safety", "Safety"],
+];
+
+function answeredBadge(score) {
+  if (score === null || score === undefined) return "?";
+  if (score >= 4) return "✓";
+  if (score === 3) return "~";
+  return "✗";
+}
+
+function evaluationCardHtml(evaluation) {
+  if (!evaluation || !evaluation.available) {
+    return `<p class="eval-unavailable">Evaluation unavailable.</p>`;
+  }
+  const answered = evaluation.answered || {};
+  const rows = EVALUATION_CRITERIA.map(([key, label]) => {
+    const entry = evaluation[key] || {};
+    const score = entry.score;
+    const scoreText = score === null || score === undefined ? "n/a" : `${score}/5`;
+    const pct = score ? Math.max(0, Math.min(100, (score / 5) * 100)) : 0;
+    return `
+      <div class="eval-row">
+        <span class="eval-row-label">${escapeHtml(label)} <strong>${escapeHtml(scoreText)}</strong></span>
+        <div class="eval-bar" role="img" aria-label="${escapeHtml(label)}: ${escapeHtml(scoreText)}">
+          <div class="eval-bar-fill" style="width:${pct}%"></div>
+        </div>
+        <p class="eval-explanation">${escapeHtml(entry.explanation || "")}</p>
+      </div>
+    `;
+  }).join("");
+
+  const strengths = (evaluation.strengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+  const weaknesses = (evaluation.weaknesses || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+  const overallText = evaluation.overall === null || evaluation.overall === undefined ? "n/a" : evaluation.overall;
+
+  return `
+    <span class="eval-answered-badge">${escapeHtml(answeredBadge(answered.score))} Answered the question?</span>
+    <p class="eval-explanation">${escapeHtml(answered.explanation || "")}</p>
+    ${rows}
+    ${strengths ? `<p class="eval-list-label">Strengths</p><ul class="eval-list">${strengths}</ul>` : ""}
+    ${weaknesses ? `<p class="eval-list-label">Weaknesses</p><ul class="eval-list">${weaknesses}</ul>` : ""}
+    <p class="eval-reasoning">${escapeHtml(evaluation.reasoning || "")}</p>
+    <span class="eval-overall-badge">Overall ${escapeHtml(overallText)}/5</span>
+  `;
+}
+
+function latencyNoteFor(row, modelId) {
+  const ranking = (row && row.latency_ranking) || [];
+  if (ranking.length === 0) return "";
+  const idx = ranking.findIndex((r) => r.model_id === modelId);
+  if (idx === -1) return "";
+  const fastestMs = ranking[0].latency_ms;
+  const ms = ranking[idx].latency_ms;
+  if (idx === 0) return `Fastest (${Math.round(ms).toLocaleString()} ms)`;
+  if (!fastestMs) return `${Math.round(ms).toLocaleString()} ms`;
+  const factor = ms / fastestMs;
+  return `${factor.toFixed(1)}x slower than fastest (${Math.round(ms).toLocaleString()} ms)`;
+}
+
+function renderLatencyPanel(data) {
+  const panel = document.getElementById("latency-panel");
+  panel.innerHTML = "";
+  (data.results || []).forEach((row) => {
+    const ranking = row.latency_ranking || [];
+    if (ranking.length === 0) return;
+    const fastestMs = ranking[0].latency_ms || 1;
+    const block = document.createElement("div");
+    block.className = "latency-prompt-block";
+    const title = document.createElement("p");
+    title.className = "latency-prompt-title";
+    title.textContent = row.test_case.prompt;
+    block.appendChild(title);
+    ranking.forEach((entry, i) => {
+      const line = document.createElement("div");
+      line.className = "latency-bar-row" + (i === 0 ? " fastest" : "");
+      const label = document.createElement("span");
+      label.className = "latency-bar-label";
+      label.textContent = entry.model_id;
+      const bar = document.createElement("div");
+      bar.className = "latency-bar";
+      bar.setAttribute("role", "img");
+      const pct = entry.latency_ms > 0 ? Math.min(100, (fastestMs / entry.latency_ms) * 100) : 0;
+      const msText = `${Math.round(entry.latency_ms).toLocaleString()} ms`;
+      bar.setAttribute("aria-label", `${entry.model_id}: ${msText}`);
+      const fill = document.createElement("div");
+      fill.className = "latency-bar-fill";
+      fill.style.width = `${pct}%`;
+      bar.appendChild(fill);
+      const msLabel = document.createElement("span");
+      msLabel.className = "latency-bar-ms";
+      msLabel.textContent = msText;
+      line.append(label, bar, msLabel);
+      block.appendChild(line);
+    });
+    panel.appendChild(block);
+  });
+
+  const avgEntries = Object.entries(data.stats || {}).filter(([, s]) => (s.ok_cells || 0) > 0);
+  if (avgEntries.length) {
+    const statsBlock = document.createElement("div");
+    statsBlock.className = "latency-averages";
+    const title = document.createElement("p");
+    title.className = "latency-averages-title";
+    title.textContent = "Averages across all prompts";
+    statsBlock.appendChild(title);
+    avgEntries
+      .sort((a, b) => (a[1].avg_latency_ms || 0) - (b[1].avg_latency_ms || 0))
+      .forEach(([modelId, s]) => {
+        const p = document.createElement("p");
+        p.className = "latency-average-line";
+        p.textContent = `${modelId}: ${Math.round(s.avg_latency_ms || 0).toLocaleString()} ms avg`;
+        statsBlock.appendChild(p);
+      });
+    panel.appendChild(statsBlock);
+  }
+
+  if (!panel.hasChildNodes()) {
+    panel.textContent = "No successful responses to compare.";
+  }
+}
+
+function renderCostBanner(data) {
+  const banner = document.getElementById("cost-banner");
+  const cost = data.cost;
+  if (!cost) {
+    banner.textContent = "";
+    return;
+  }
+  const hasEstimatedBackend = (data.results || []).some((row) =>
+    Object.keys(row.cells || {}).some((modelId) => targetBackend(modelId) !== "openrouter")
+  );
+  const estimateNote = hasEstimatedBackend ? " Estimates for Bedrock/Vertex/Foundry are from catalog prices." : "";
+  const callWord = cost.judge_calls === 1 ? "call" : "calls";
+  banner.textContent =
+    `This run cost ~$${cost.total_usd.toFixed(4)} — models $${cost.model_usd.toFixed(4)} + ` +
+    `judge $${cost.judge_usd.toFixed(4)} (${cost.judge_calls} judge ${callWord}).${estimateNote}`;
+}
+
 function renderResults(data) {
   document.getElementById("results-section").hidden = false;
+
+  renderCostBanner(data);
 
   const verdictEl = document.getElementById("verdict-banner");
   verdictEl.textContent = data.verdict.winner
@@ -1038,6 +1201,8 @@ function renderResults(data) {
   renderCompareGrid(data);
 
   renderCategoryChart(data.grades);
+
+  renderLatencyPanel(data);
 
   const leaderboardEl = document.getElementById("leaderboard");
   leaderboardEl.innerHTML = "";
@@ -1061,7 +1226,7 @@ function renderResults(data) {
 
   const gridEl = document.getElementById("results-grid");
   gridEl.innerHTML = "";
-  data.results.forEach((row) => {
+  data.results.forEach((row, rowIndex) => {
     const promptHeader = document.createElement("h3");
     promptHeader.textContent = row.test_case.prompt;
     gridEl.appendChild(promptHeader);
@@ -1090,7 +1255,23 @@ function renderResults(data) {
         });
         cellEl.appendChild(detailsButton);
       } else {
-        cellEl.innerHTML = `<strong>${escapeHtml(modelId)}</strong><p>${escapeHtml(cell.response_text)}</p>`;
+        const latencyNote = latencyNoteFor(row, modelId);
+        cellEl.innerHTML = `
+          <strong>${escapeHtml(modelId)}</strong>
+          <p>${escapeHtml(cell.response_text)}</p>
+          ${latencyNote ? `<p class="eval-latency-note">${escapeHtml(latencyNote)}</p>` : ""}
+        `;
+        const evalDetails = document.createElement("details");
+        evalDetails.className = "eval-card";
+        if (rowIndex === 0) evalDetails.open = true;
+        const summary = document.createElement("summary");
+        summary.textContent = "Evaluation";
+        evalDetails.appendChild(summary);
+        const evalBody = document.createElement("div");
+        evalBody.className = "eval-card-body";
+        evalBody.innerHTML = evaluationCardHtml(cell.evaluation);
+        evalDetails.appendChild(evalBody);
+        cellEl.appendChild(evalDetails);
       }
       gridEl.appendChild(cellEl);
     });
