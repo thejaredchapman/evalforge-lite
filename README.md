@@ -2,9 +2,9 @@
 
 <!-- mcp-name: io.github.thejaredchapman/evalforge-lite -->
 
-Compare text LLMs across providers — OpenRouter, Amazon Bedrock, and Google
-Vertex AI — bring your own credentials. Available as a web app and as an
-MCP server.
+Compare text LLMs across providers — OpenRouter, Amazon Bedrock, Google
+Vertex AI, and Microsoft Foundry — bring your own credentials. Available as
+a web app and as an MCP server.
 
 ## Setup
 
@@ -29,7 +29,7 @@ credentials.
 ### Try it out
 
 1. Open the credentials panel and fill in the backend(s) you'll use (see
-   [Backends](#backends-openrouter-amazon-bedrock-google-vertex-ai) below).
+   [Backends](#backends-openrouter-amazon-bedrock-google-vertex-ai-microsoft-foundry) below).
 2. Add a test case: a prompt, and optionally a rubric (scored by an LLM
    judge) and/or rule-based checks (e.g. "contains", "max_length").
 3. Pick two to four models, ideally from different providers, from the
@@ -47,7 +47,7 @@ credentials.
 rate-limited to 3 runs per 8 hours per browser session (resets if you
 restart the server) — see [Notes](#notes).
 
-## Backends: OpenRouter, Amazon Bedrock, Google Vertex AI
+## Backends: OpenRouter, Amazon Bedrock, Google Vertex AI, Microsoft Foundry
 
 Every request carries its own credentials — nothing is read from server
 env/config, and credentials are never stored beyond the request that used
@@ -59,26 +59,32 @@ them.
   a region.
 - **Google Vertex AI** — either an OAuth access token or a service-account
   JSON key, plus a GCP project id and a region.
+- **Microsoft Foundry** — either an API key or a Microsoft Entra ID access
+  token, plus an Azure AI Foundry resource name and a region.
 
 A model *target* is `"<catalog id>"` for OpenRouter, or `"<catalog
-id>@bedrock"` / `"<catalog id>@vertex"` to run that same model on Bedrock or
-Vertex instead. In the UI, pick a target by clicking a model's Bedrock or
-Vertex chip (shown under any model the catalog has a route for) rather than
-typing the `@backend` suffix by hand.
+id>@bedrock"` / `"<catalog id>@vertex"` / `"<catalog id>@foundry"` to run
+that same model on Bedrock, Vertex, or Foundry instead. In the UI, pick a
+target by clicking a model's Bedrock, Vertex, or Foundry chip (shown under
+any model the catalog has a route for) rather than typing the `@backend`
+suffix by hand.
 
 The **judge backend** picker (next to the credentials panel) selects which
 backend runs the LLM judge and the policy gate — it can differ from the
 backend(s) the models under test run on, but needs its own credentials
 filled in.
 
-Bedrock/Vertex costs shown in the leaderboard and reports are *estimates*,
-computed from the per-token prices in `data/providers.json`, not costs
-reported back by AWS/GCP billing.
+Bedrock/Vertex/Foundry costs shown in the leaderboard and reports are
+*estimates*, computed from the per-token prices in `data/providers.json`,
+not costs reported back by AWS/GCP/Azure billing.
 
-Some Bedrock/Vertex routes are region-restricted: Vertex's Llama MaaS
-models are only offered in certain regions (e.g. `us-east5`), and Gemini
-preview models may need the `global` region instead of a specific one. If a
-run fails with a routing/availability error, try a different region.
+Some Bedrock/Vertex/Foundry routes are region-restricted: Vertex's Llama
+MaaS models are only offered in certain regions (e.g. `us-east5`), Gemini
+preview models may need the `global` region instead of a specific one, and
+Foundry's Llama routes are only curated for a handful of regions. The
+region dropdowns warn with a ⚠ when a selected model isn't listed for your
+chosen region on that backend, and suggest which regions it is listed in —
+see [Where models run](#where-models-run) below for the full picture.
 
 ## Comparing up to 4 models
 
@@ -158,6 +164,25 @@ that "the judge ... is from the same family as ..." and that scores may
 lean in that model's favor — for important decisions, re-run with a judge
 from a different provider.
 
+## Where models run
+
+The `/availability` page (linked from the header) shows, for every catalog
+model: whether it's currently listed on OpenRouter (checked live, cached
+for up to 6 hours) and which regions it's curated for on Bedrock, Vertex,
+and Foundry. It's filterable by model/provider name, backend, and region,
+and sortable by clicking any column header. Curated region data is
+dated and sourced — it can lag reality, so verify on the provider's own
+page before relying on it for a production decision.
+
+## Provider status & reporting problems
+
+The header's "Provider status" menu links to each backend's live status
+page (OpenRouter, AWS, Google Cloud, Azure), and the footer links to each
+backend's own place to report a problem (GitHub issues for this app itself,
+plus each cloud provider's support/feedback page). When a model call fails,
+the error popup also adds "Check \<backend\> status" and "Report to
+\<backend\>" links for the specific backend that failed.
+
 ## MCP server
 
     python mcp_server.py
@@ -176,9 +201,9 @@ Claude Code) pointing at this venv's Python and this file:
 }
 ```
 
-Exposes 8 tools: `list_models`, `suggest_models`, `set_policy`, `evaluate_prompt`,
-`run_comparison`, `list_runs`, `get_report`, `get_report_csv` — the same
-functionality as the web app's API, minus file-upload policy support
+Exposes 9 tools: `list_models`, `suggest_models`, `set_policy`, `evaluate_prompt`,
+`run_comparison`, `list_availability`, `list_runs`, `get_report`, `get_report_csv`
+— the same functionality as the web app's API, minus file-upload policy support
 (`set_policy` takes plain text).
 State (policy, run history, rate limit) is per-process, since one stdio
 connection is one client. It's a local-only interface (stdio requires the
@@ -188,7 +213,8 @@ server to run on the same machine as the client) — there's nothing to
 `run_comparison` and `evaluate_prompt` both take a `creds` argument —
 `{"openrouter"?: str, "bedrock"?: {region, api_key} | {region, access_key_id,
 secret_access_key, session_token?}, "vertex"?: {project, region, access_token}
-| {project, region, service_account_json}}` — plus a `judge_backend` (default
+| {project, region, service_account_json}, "foundry"?: {resource, region, api_key}
+| {resource, region, access_token}}` — plus a `judge_backend` (default
 `"openrouter"`) picking which backend runs the judge and policy gate. Creds for
 the judge backend are always required, and malformed creds for any backend the
 call uses are rejected up front, before the call counts against the rate limit. The
@@ -214,6 +240,9 @@ everything a plain run does plus:
   model id that scored this run.
 - `bias_note` — a warning string (or `""`) when the judge shares a provider
   with one of the compared models.
+- `list_availability` returns the same snapshot as `/api/availability`: live
+  OpenRouter listing status (6-hour cache) plus curated Bedrock/Vertex/Foundry
+  region coverage.
 
 ### Publishing to the official MCP registry
 
@@ -319,6 +348,12 @@ field from before the 4-model comparison work, note:
   live `/models` endpoint if one stops working.
 - Rate-limited to 3 runs per 8 hours per session (in-memory, resets on
   server restart) in both interfaces.
+- Bedrock/Vertex/Foundry region data in `data/regions.json` and each
+  model's `routes.<backend>.regions` in `data/providers.json` are curated
+  snapshots (dated, with a source link on the `/availability` page) — not
+  a live per-account listing. They can go stale as providers add or drop
+  regions; verify on the provider's own page if a run fails with a
+  region/availability error.
 - All state is in-memory only, capped at 5 runs per session — nothing is
   persisted to disk.
 
