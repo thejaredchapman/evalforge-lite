@@ -149,6 +149,21 @@ function atCap() {
   return state.selectedModels.size >= maxModels();
 }
 
+// How many selected targets belong to this provider (curated ids or live "<provider>/..." ids).
+function providerSelectedCount(providerId) {
+  const ids = new Set(state.catalog.providers[providerId].models.map((m) => m.id));
+  let n = 0;
+  state.selectedModels.forEach((target) => {
+    const { modelId } = splitTarget(target);
+    if (ids.has(modelId) || modelId.startsWith(`${providerId}/`)) n += 1;
+  });
+  return n;
+}
+
+function rowHasSelection(row) {
+  return Array.from(row.querySelectorAll("[data-target]")).some((el) => state.selectedModels.has(el.dataset.target));
+}
+
 function syncSelectionVisuals() {
   const cap = PickerCore.capState(state.selectedModels.size, maxModels());
   document.querySelectorAll("[data-target]").forEach((el) => {
@@ -156,19 +171,14 @@ function syncSelectionVisuals() {
     if (el.type === "checkbox") {
       el.checked = selected;
       el.disabled = cap.atCap && !selected;
-      el.title = el.disabled ? capMessage() : "";
+      if (el.disabled) el.title = capMessage();
+      else el.removeAttribute("title");
     } else {
       el.classList.toggle("selected", selected);
     }
   });
   if (state.catalog) document.querySelectorAll(".provider-dropdown").forEach((details) => {
-    const provider = state.catalog.providers[details.dataset.provider];
-    const ids = new Set(provider.models.map((m) => m.id));
-    let n = 0;
-    state.selectedModels.forEach((target) => {
-      const { modelId } = splitTarget(target);
-      if (ids.has(modelId) || modelId.startsWith(`${details.dataset.provider}/`)) n += 1;
-    });
+    const n = providerSelectedCount(details.dataset.provider);
     details.querySelector(".provider-selected").textContent = n ? `${n} selected` : "";
   });
   updateSelectionMeta();
@@ -484,8 +494,11 @@ function renderTagFilters() {
   [["need", "What do you need?"], ["industry", "Industry"]].forEach(([kind, heading]) => {
     const row = document.createElement("div");
     row.className = "tag-row";
+    row.setAttribute("role", "group");
+    row.setAttribute("aria-labelledby", `tag-row-label-${kind}`);
     const label = document.createElement("span");
     label.className = "tag-row-label";
+    label.id = `tag-row-label-${kind}`;
     label.textContent = heading;
     row.appendChild(label);
     tagData.tags.filter((t) => t.kind === kind).forEach((tag) => {
@@ -540,14 +553,21 @@ function applyFilters() {
   const visible = new Set(PickerCore.filterModels(curated, active).map((m) => m.id));
 
   document.querySelectorAll(".curated-rows .model-row").forEach((row) => {
-    row.hidden = !visible.has(row.dataset.modelId);
+    // a selected model's row stays visible so it can always be unticked
+    row.hidden = !visible.has(row.dataset.modelId) && !rowHasSelection(row);
   });
   document.querySelectorAll(".live-group").forEach((group) => {
-    group.hidden = active.length > 0; // live extras have no tags
+    // live extras have no tags: hide them while filtering, except selected ones
+    let any = false;
+    group.querySelectorAll(".model-row").forEach((row) => {
+      row.hidden = active.length > 0 && !rowHasSelection(row);
+      if (!row.hidden) any = true;
+    });
+    group.hidden = !any;
   });
   document.querySelectorAll(".provider-dropdown").forEach((details) => {
-    const hasMatch = !!details.querySelector(".curated-rows .model-row:not([hidden])");
-    details.hidden = active.length > 0 && !hasMatch;
+    const hasMatch = !!details.querySelector(".model-row:not([hidden])");
+    details.hidden = active.length > 0 && !hasMatch && providerSelectedCount(details.dataset.provider) === 0;
     if (active.length > 0 && hasMatch) details.open = true;
   });
 
@@ -665,6 +685,10 @@ function renderProviders(providers) {
 async function toggleTarget(target) {
   if (state.selectedModels.has(target)) {
     state.selectedModels.delete(target);
+    if (state.customModels.includes(target)) {
+      state.customModels = state.customModels.filter((id) => id !== target);
+      renderCustomModels();
+    }
     syncSelectionVisuals();
     return;
   }

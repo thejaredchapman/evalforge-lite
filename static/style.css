@@ -534,7 +534,7 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
 .model-row-name { font-weight: bold; min-width: 160px; }
 .reasoning-badge {
   font-size: 10px; padding: 1px 8px; border-radius: 999px;
-  background: var(--accent, var(--fg)); color: #fff;
+  background: var(--fg); color: var(--bg);
 }
 .tag-pill { font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); }
 .backend-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-left: auto; }
@@ -547,3 +547,7 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
   .backend-checks { margin-left: 0; }
   .tag-row-label { min-width: 100%; }
 }
+.provider-dropdown > summary { list-style: none; }
+.provider-dropdown > summary::-webkit-details-marker { display: none; }
+.provider-dropdown > summary::before { content: "▸"; color: var(--muted); }
+.provider-dropdown[open] > summary::before { content: "▾"; }
