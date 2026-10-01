@@ -154,6 +154,9 @@ selected models, test cases, and repeats, priced from the catalog
 (Bedrock/Vertex) or OpenRouter's live prices. It excludes judge calls and
 shows "unavailable" for any selected model without pricing data. It
 recalculates whenever you change your selection, test cases, or repeats.
+After the run, the cost banner above the leaderboard shows the actual
+total instead, judge calls included — see
+[Per-response evaluation, latency comparison & total cost](#per-response-evaluation-latency-comparison--total-cost).
 
 ### Judge disclosure
 
@@ -163,6 +166,37 @@ comparing (e.g. an Anthropic judge scoring a Claude model), a note warns
 that "the judge ... is from the same family as ..." and that scores may
 lean in that model's favor — for important decisions, re-run with a judge
 from a different provider.
+
+### Per-response evaluation, latency comparison & total cost
+
+Every successful response gets a combined judge call that scores six
+criteria 1-5: whether it **answered the question**, **quality**,
+**instruction following**, **completeness**, **helpfulness**, and
+**safety** — plus strengths, weaknesses, a short reasoning paragraph, and
+an overall 1-5 score. It's collapsible under each response
+("Evaluation"), open by default for the first prompt. These scores blend
+into **Quality**: if a rubric or rule checks were also used, that
+judge-score/rule-check blend is further averaged 50/50 with the
+evaluation's score; with neither, Quality *is* the evaluation score; with
+no successful evaluation either, Quality stays unscored ("N/A"). If a
+response's evaluation call fails or returns something unparseable, its
+card shows "Evaluation unavailable" and that response is simply excluded
+from the evaluation half of Quality — it never fails the run.
+
+Each side-by-side column also shows "Overall eval x/5" and how its average
+response time compares to the fastest model in the run (e.g. "1.8× slower
+than fastest (2,340 ms)", or "Fastest"). A **Latency comparison** panel
+below the leaderboard shows this per-prompt as a bar per model (fastest
+highlighted), with the run's averages at the bottom.
+
+A **cost banner** at the top of the results totals the whole run: model
+calls plus every judge call (the rubric judge, the per-response
+evaluation, the policy gate, the overall verdict, and the suggestion
+explainer) — e.g. "This run cost ≈ $0.0123 — models $0.0101 + judge
+$0.0022 (6 judge calls)." As with the Bedrock/Vertex/Foundry model costs
+elsewhere in this app, judge costs on those backends are estimates from
+catalog prices, not provider billing; the banner notes this whenever any
+compared model uses one of those backends.
 
 ## Where models run
 
@@ -240,6 +274,14 @@ everything a plain run does plus:
   model id that scored this run.
 - `bias_note` — a warning string (or `""`) when the judge shares a provider
   with one of the compared models.
+- `cost` — `{"model_usd", "judge_usd", "total_usd", "judge_calls"}` for the
+  whole run (estimated for Bedrock/Vertex/Foundry calls, both model and
+  judge).
+- Each result cell gains `evaluation` — the per-response evaluation (or
+  `{"available": false, "reason": "Evaluation unavailable."}`).
+- `stats[<model>]` gains `evaluation_avg` and `latency_vs_fastest`.
+- Each result row gains `latency_ranking` — that prompt's successful
+  targets ordered fastest-first with their latency in ms.
 - `list_availability` returns the same snapshot as `/api/availability`: live
   OpenRouter listing status (6-hour cache) plus curated Bedrock/Vertex/Foundry
   region coverage.
@@ -304,6 +346,16 @@ field from before the 4-model comparison work, note:
 - API/MCP: `categories.speed` in a run result's `grades[<model>].categories`
   is now `categories.response_time`, and a new `categories.throughput` key
   was added alongside it.
+- CSV: 7 trailing columns were added after `best_model_reason`:
+  `answered_score, overall_eval, quality_score, instruction_following_score,
+  completeness_score, helpfulness_score, safety_score` (blank for
+  blocked/error cells or when a response's evaluation is unavailable).
+- API/MCP: `grades[<model>].categories` gained an `evaluation` key, and
+  `grades[<model>].score` ("Quality") may now be blended with the
+  per-response evaluation score — see
+  [Per-response evaluation, latency comparison & total cost](#per-response-evaluation-latency-comparison--total-cost).
+  A run result gained `cost`; `stats[<model>]` gained `evaluation_avg` and
+  `latency_vs_fastest`; each result row gained `latency_ranking`.
 
 ## Features
 
@@ -324,6 +376,11 @@ field from before the 4-model comparison work, note:
 - Per-prompt best-model recommendation: for each test case, which model
   handled that specific prompt best and why — computed from data already
   collected, no extra LLM call.
+- Per-response evaluation (answered/quality/instruction following/
+  completeness/helpfulness/safety, strengths, weaknesses, reasoning,
+  overall score), a latency comparison panel, and a total-cost banner for
+  the whole run (model calls plus every judge call) — see
+  [Per-response evaluation, latency comparison & total cost](#per-response-evaluation-latency-comparison--total-cost).
 - Optional pre-run prompt quality feedback (an explicit "Evaluate prompt"
   action, not automatic) — clarity/specificity feedback before you spend
   a real run on a prompt that might need rewording.
