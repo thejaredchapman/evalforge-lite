@@ -1,0 +1,11 @@
+{
+  "name": "evalforge-lite",
+  "displayName": "EvalForge Lite",
+  "version": "1.0.0",
+  "description": "Compare text LLMs across OpenRouter, Amazon Bedrock, Google Vertex AI and Microsoft Foundry with automated grading, cost/latency stats and reports. Bring your own credentials.",
+  "author": { "name": "Jared Chapman" },
+  "homepage": "https://github.com/thejaredchapman/evalforge-lite",
+  "repository": "https://github.com/thejaredchapman/evalforge-lite",
+  "license": "MIT",
+  "keywords": ["mcp", "llm", "evaluation", "benchmark", "openrouter", "bedrock", "vertex-ai", "foundry"]
+}

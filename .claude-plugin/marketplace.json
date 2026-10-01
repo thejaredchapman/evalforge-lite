@@ -1,0 +1,12 @@
+{
+  "name": "evalforge",
+  "description": "EvalForge Lite: compare text LLMs across providers.",
+  "owner": { "name": "Jared Chapman" },
+  "plugins": [
+    {
+      "name": "evalforge-lite",
+      "source": "./",
+      "description": "MCP server that compares text LLMs across OpenRouter, Bedrock, Vertex AI and Foundry with automated grading and reports."
+    }
+  ]
+}

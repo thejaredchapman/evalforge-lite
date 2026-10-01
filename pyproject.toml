@@ -1,0 +1,57 @@
+# Packaging for the MCP server (PyPI: `evalforge-lite`, command: `evalforge-lite`).
+#
+# Layout note: the project's modules use flat imports (`import config`) so they run straight
+# from a checkout (`python app.py`, `pytest`). For the wheel, the repo root is mapped to a
+# single top-level package, `evalforge_lite`, so installing it never drops generic module
+# names like `config` or `errors` into someone's environment. `__init__.py` puts the package
+# directory on sys.path so the flat imports keep resolving. The web app's templates/static
+# are NOT shipped: the wheel is for the MCP server; the web app deploys from the repo.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evalforge-lite"
+version = "1.0.0"
+description = "Compare text LLMs across OpenRouter, Amazon Bedrock, Google Vertex AI and Microsoft Foundry with automated grading and reports (MCP server)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jared Chapman" }]
+keywords = ["mcp", "llm", "evaluation", "benchmark", "openrouter", "bedrock", "vertex-ai", "foundry"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "mcp[cli]",
+    "requests",
+    "botocore",
+    "google-auth",
+    "fpdf2",
+    "pdfplumber",
+    "matplotlib",
+    "flask",
+]
+
+[project.urls]
+Homepage = "https://github.com/thejaredchapman/evalforge-lite"
+Repository = "https://github.com/thejaredchapman/evalforge-lite"
+Issues = "https://github.com/thejaredchapman/evalforge-lite/issues"
+
+[project.scripts]
+evalforge-lite = "evalforge_lite.mcp_server:main"
+
+[tool.setuptools]
+packages = ["evalforge_lite"]
+
+[tool.setuptools.package-dir]
+evalforge_lite = "."
+
+[tool.setuptools.package-data]
+evalforge_lite = ["data/*.json"]

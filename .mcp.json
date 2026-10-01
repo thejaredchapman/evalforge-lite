@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "evalforge-lite": {
+      "command": "uvx",
+      "args": ["evalforge-lite"]
+    }
+  }
+}

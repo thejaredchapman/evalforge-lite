@@ -206,5 +206,9 @@ def get_report_csv(run_id: str | None = None) -> dict:
     return {"csv": report.build_csv(run_result)}
 
 
-if __name__ == "__main__":
+def main():
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

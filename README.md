@@ -414,18 +414,78 @@ everything a plain run does plus:
   OpenRouter listing status (6-hour cache) plus curated Bedrock/Vertex/Foundry
   region coverage.
 
-### Publishing to the official MCP registry
+### Install the MCP server (for users)
 
-`server.json` is already prepared. Publishing itself requires your own
-GitHub OAuth login, so run this yourself:
+Once the package is on PyPI you don't need a checkout or a virtualenv. With
+[`uv`](https://docs.astral.sh/uv/) installed:
 
-    brew install mcp-publisher   # or download a release binary
-    mcp-publisher login github
+    uvx evalforge-lite
+
+Add it to Claude Code in one line:
+
+    claude mcp add evalforge-lite -- uvx evalforge-lite
+
+Or, from Claude Code, install the plugin (it bundles the same server):
+
+    claude plugin marketplace add thejaredchapman/evalforge-lite
+    claude plugin install evalforge-lite@evalforge
+
+To use the latest code from GitHub before a release is on PyPI:
+`uvx --from git+https://github.com/thejaredchapman/evalforge-lite evalforge-lite`.
+
+### Publishing (for the maintainer)
+
+Everything below needs *your* accounts, so none of it is automated. The files
+are already in the repo: `pyproject.toml`, `server.json`, and
+`.claude-plugin/` (`plugin.json`, `marketplace.json`) plus `.mcp.json`. The
+packaging layout and its reasons are explained at the top of `pyproject.toml`.
+
+**Before every release**, bump the version in all four places and keep them
+identical: `pyproject.toml`, `server.json` (twice: the top-level `version` and
+`packages[0].version`), and `.claude-plugin/plugin.json`. `pytest` checks that
+they agree (`tests/test_packaging.py`).
+
+**1. Publish to PyPI** (the registry only stores a pointer to this package):
+
+    pip install build twine
+    python -m build
+    twine upload dist/*      # asks for your PyPI API token
+
+Check the new project page, then try it: `uvx evalforge-lite`. The README
+carries the `mcp-name: io.github.thejaredchapman/evalforge-lite` marker that
+proves to the MCP registry that you own this PyPI package — don't remove it.
+
+**2. Publish to the official MCP registry** (after step 1 is live):
+
+    brew install mcp-publisher     # or download a release binary
+    mcp-publisher validate         # checks server.json
+    mcp-publisher login github     # opens a browser for GitHub sign-in
     mcp-publisher publish
 
-This registry (and its `server.json` schema) is new and evolves quickly —
-check [the current publishing docs](https://github.com/modelcontextprotocol/registry)
-before running the above in case anything's changed since this was written.
+The name must start with `io.github.thejaredchapman/`, which it does. This
+registry is new and changes quickly — check
+[the current publishing docs](https://github.com/modelcontextprotocol/registry)
+if a command above stops working.
+
+**3. Your own Claude Code marketplace** (nothing to submit; pushing to GitHub
+is enough). Before pushing, check the files:
+
+    claude plugin validate --strict .
+
+Then anyone can run the two `claude plugin ...` commands shown in
+[Install the MCP server](#install-the-mcp-server-for-users). The plugin runs
+`uvx evalforge-lite`, so step 1 must be done first.
+
+**4. Anthropic's directory** (claude.ai and Cowork). Submit from
+<https://claude.ai/directory/manage> (needs a paid claude.ai plan). Run
+`claude plugin validate --strict .` and read the
+[pre-submission checklist](https://claude.com/docs/plugins/pre-submission-checklist)
+first; each version is reviewed.
+
+**Before making it public:** by default every user brings their own provider
+key, which is the safe setup for a public tool. Do not set the server-side key
+variables on a deployment you share publicly unless you want to pay for your
+users' calls (see [Server-side keys](#server-side-keys-optional-for-operators)).
 
 ## Deploy (web app)
 
