@@ -21,6 +21,7 @@ import policy
 import report
 import runner
 import scrub
+import server_creds
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ def api_catalog():
         "priority_labels": grading.PRIORITY_LABELS,
         "regions": catalog.load_regions(),
         "provider_links": gateway.PROVIDER_LINKS,
+        "server_backends": server_creds.public_summary(),
     })
 
 
@@ -88,13 +90,28 @@ def api_availability():
     return jsonify(availability.snapshot())
 
 
+def _server_cap_refusal(session_id, held, targets, judge_backend):
+    """429 response when this call needs a server-held backend and the shared daily cap is spent.
+
+    Returns None when the call doesn't touch a server-held key or is still within the cap.
+    """
+    if not set(held) & gateway.backends_used(targets, judge_backend):
+        return None
+    result = limiter.check_and_record_server_key(time.time())
+    if result["allowed"]:
+        return None
+    resp = jsonify({"error": "rate_limited", "reset_at": result["reset_at"], "message": limiter.SERVER_CAP_MESSAGE})
+    resp.status_code = 429
+    return _with_session_cookie(resp, session_id)
+
+
 @app.route("/api/evaluate-prompt", methods=["POST"])
 def api_evaluate_prompt():
     session_id = _get_session_id()
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return _with_session_cookie(_error_response("Request body must be JSON.", 400), session_id)
-    raw_creds = gateway.normalize_creds(body.get("creds"), body.get("api_key"))
+    raw_creds, held = gateway.merge_server_creds(gateway.normalize_creds(body.get("creds"), body.get("api_key")))
     if not body.get("prompt") or raw_creds is None:
         return _with_session_cookie(
             _error_response("Missing required field: prompt and creds (or api_key).", 400), session_id
@@ -111,6 +128,10 @@ def api_evaluate_prompt():
         resp = jsonify({"error": "rate_limited", "reset_at": limit_result["reset_at"]})
         resp.status_code = 429
         return _with_session_cookie(resp, session_id)
+
+    refusal = _server_cap_refusal(session_id, held, [], judge_backend)
+    if refusal:
+        return refusal
 
     result = judge.evaluate_prompt(body["prompt"], creds=creds, backend=judge_backend)
     return _with_session_cookie(jsonify(result), session_id)
@@ -133,8 +154,6 @@ def _validate_run_body(body):
         return "Missing required field: models."
     if any(not m.strip() for m in body["models"]):
         return "Model ids must be non-empty strings."
-    if gateway.normalize_creds(body.get("creds"), body.get("api_key")) is None:
-        return "Missing required field: creds (or api_key)."
     if body.get("judge_backend", "openrouter") not in gateway.BACKENDS:
         return "Invalid judge_backend."
     if not isinstance(body.get("test_cases"), list):
@@ -156,7 +175,9 @@ def api_run():
     if error:
         return _with_session_cookie(_error_response(error, 400), session_id)
 
-    raw_creds = gateway.normalize_creds(body.get("creds"), body.get("api_key"))
+    raw_creds, held = gateway.merge_server_creds(gateway.normalize_creds(body.get("creds"), body.get("api_key")))
+    if raw_creds is None:
+        return _with_session_cookie(_error_response("Missing required field: creds (or api_key).", 400), session_id)
     judge_backend = body.get("judge_backend", "openrouter")
     test_cases = body["test_cases"]
     model_ids = body["models"]
@@ -174,6 +195,10 @@ def api_run():
         resp = jsonify({"error": "rate_limited", "reset_at": limit_result["reset_at"]})
         resp.status_code = 429
         return _with_session_cookie(resp, session_id)
+
+    refusal = _server_cap_refusal(session_id, held, model_ids, judge_backend)
+    if refusal:
+        return refusal
 
     try:
         meter = costs.CostMeter()

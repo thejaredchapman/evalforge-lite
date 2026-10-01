@@ -1,4 +1,5 @@
 import io
+import json
 import re
 from unittest.mock import patch
 
@@ -590,3 +591,123 @@ def test_api_run_evaluation_gateway_error_never_leaks_secret(caplog):
     assert secret not in caplog.text
     history_resp = _client().get("/api/runs")
     assert secret not in history_resp.get_data(as_text=True)
+
+
+SERVER_KEY = "sk-or-v1-server-secret-123456"
+
+
+def test_api_catalog_lists_server_backends_without_secrets(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", SERVER_KEY)
+    monkeypatch.setenv("FOUNDRY_RESOURCE", "evalforge-secret-resource")
+    monkeypatch.setenv("FOUNDRY_REGION", "eastus2")
+    monkeypatch.setenv("FOUNDRY_API_KEY", "foundry-secret-key")
+    data = _client().get("/api/catalog").get_json()
+    assert data["server_backends"] == {"openrouter": {}, "foundry": {"region": "eastus2"}}
+    text = json.dumps(data)
+    for needle in (SERVER_KEY, "evalforge-secret-resource", "foundry-secret-key"):
+        assert needle not in text
+
+
+def test_api_catalog_server_backends_empty_by_default():
+    assert _client().get("/api/catalog").get_json()["server_backends"] == {}
+
+
+@patch("analysis.judge.explain_recommendations", return_value="")
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_uses_server_key_when_client_sends_none(mock_verdict, mock_run, mock_explain, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", SERVER_KEY)
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    resp = _client().post("/api/run", json={"test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"]})
+    assert resp.status_code == 200
+    assert mock_run.call_args.kwargs["creds"]["openrouter"] == SERVER_KEY
+
+
+@patch("analysis.judge.explain_recommendations", return_value="")
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_ignores_client_key_for_server_held_backend(mock_verdict, mock_run, mock_explain, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", SERVER_KEY)
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-user-key",
+    })
+    assert resp.status_code == 200
+    assert mock_run.call_args.kwargs["creds"]["openrouter"] == SERVER_KEY
+
+
+def test_api_run_without_any_creds_still_400_when_nothing_server_held():
+    resp = _client().post("/api/run", json={"test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"]})
+    assert resp.status_code == 400
+    assert "api_key" in resp.get_json()["error"]
+
+
+def test_api_run_error_scrubs_server_key(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", SERVER_KEY)
+    with patch("app.runner.run", side_effect=Exception(f"failed using key {SERVER_KEY}")):
+        resp = _client().post("/api/run", json={"test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"]})
+    assert resp.status_code == 503
+    error = resp.get_json()["error"]
+    assert SERVER_KEY not in error and "[REDACTED]" in error
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_server_key_cap_refuses_with_message(mock_verdict, mock_run, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", SERVER_KEY)
+    monkeypatch.setenv("SERVER_KEY_DAILY_CAP", "1")
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    client = _client()
+    payload = {"test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"]}
+    assert client.post("/api/run", json=payload).status_code == 200
+    second = client.post("/api/run", json=payload)
+    assert second.status_code == 429
+    body = second.get_json()
+    assert body["error"] == "rate_limited"
+    assert body["message"] == "The server's shared usage limit has been reached. Please try again later."
+    assert body["reset_at"] is not None
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_session_limit_refusal_does_not_consume_server_cap(mock_verdict, mock_run, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", SERVER_KEY)
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    client = _client()
+    payload = {"test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"]}
+    for _ in range(3):
+        assert client.post("/api/run", json=payload).status_code == 200
+    assert client.post("/api/run", json=payload).status_code == 429  # per-session limit
+    assert len(limiter._server_key_calls) == 3
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_cap_not_consumed_when_held_backend_is_not_needed(mock_verdict, mock_run, monkeypatch):
+    monkeypatch.setenv("FOUNDRY_RESOURCE", "res")
+    monkeypatch.setenv("FOUNDRY_REGION", "eastus2")
+    monkeypatch.setenv("FOUNDRY_API_KEY", "foundry-secret-key")
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-user-key",
+    })
+    assert resp.status_code == 200  # judge + target both OpenRouter, user-supplied
+    assert limiter._server_key_calls == []
+
+
+@patch("app.judge.evaluate_prompt")
+def test_api_evaluate_prompt_uses_server_key_and_counts_against_cap(mock_evaluate, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", SERVER_KEY)
+    monkeypatch.setenv("SERVER_KEY_DAILY_CAP", "1")
+    mock_evaluate.return_value = {"score": 4, "feedback": "ok"}
+    client = _client()
+    assert client.post("/api/evaluate-prompt", json={"prompt": "hello"}).status_code == 200
+    mock_evaluate.assert_called_once_with("hello", creds={"openrouter": SERVER_KEY}, backend="openrouter")
+    second = client.post("/api/evaluate-prompt", json={"prompt": "hello again"})
+    assert second.status_code == 429
+    assert second.get_json()["message"].startswith("The server's shared usage limit")
