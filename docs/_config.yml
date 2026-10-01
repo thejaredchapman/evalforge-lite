@@ -1,0 +1,6 @@
+title: EvalForge Lite
+description: Compare text LLMs across providers, with automatic grading and reports.
+theme: jekyll-theme-minimal
+exclude: [superpowers]
+plugins: [jekyll-relative-links]
+relative_links: {enabled: true, collection: false}
