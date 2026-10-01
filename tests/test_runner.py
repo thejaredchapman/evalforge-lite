@@ -1,19 +1,34 @@
 from unittest.mock import patch
 
+import pytest
+
+import costs
+import gateway
+import judge
 import openrouter
 import runner
 
 
-def _fake_call_model(model_id, messages, api_key, timeout=60):
-    return {"text": f"response from {model_id}", "latency_ms": 10, "cost_usd": 0.001, "tokens": 20}
+@pytest.fixture(autouse=True)
+def _default_evaluation(monkeypatch):
+    """Every successful cell now calls judge.evaluate_response unconditionally. Default
+    it to a cheap, deterministic stub so tests that don't care about evaluation never
+    reach the network; tests that assert on cell["evaluation"] override this with @patch.
+    """
+    monkeypatch.setattr(judge, "evaluate_response",
+                        lambda *a, **k: {"available": False, "reason": "Evaluation unavailable."})
 
 
-@patch("runner.openrouter.call_model", side_effect=_fake_call_model)
+def _fake_call_target(target, messages, creds, timeout=60):
+    return {"text": f"response from {target}", "latency_ms": 10, "cost_usd": 0.001, "tokens": 20}
+
+
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
 def test_fans_out_every_test_case_by_model_pair(mock_call):
     test_cases = [{"prompt": "q1"}, {"prompt": "q2"}]
     model_ids = ["openai/gpt-5", "anthropic/claude-opus-4.5"]
 
-    results = runner.run(test_cases, model_ids, api_key="sk-or-v1-test")
+    results = runner.run(test_cases, model_ids, creds={"openrouter": "sk-or-v1-test"})
 
     assert len(results) == 2
     for row in results:
@@ -21,16 +36,16 @@ def test_fans_out_every_test_case_by_model_pair(mock_call):
     assert mock_call.call_count == 4
 
 
-@patch("runner.openrouter.call_model")
+@patch("runner.gateway.call_target")
 def test_one_model_failure_does_not_abort_other_cells(mock_call):
-    def _side_effect(model_id, messages, api_key, timeout=60):
-        if model_id == "broken/model":
+    def _side_effect(target, messages, creds, timeout=60):
+        if target == "broken/model":
             raise openrouter.OpenRouterError("rate limited")
         return {"text": "ok response", "latency_ms": 5, "cost_usd": 0.0, "tokens": 5}
 
     mock_call.side_effect = _side_effect
 
-    results = runner.run([{"prompt": "q1"}], ["broken/model", "openai/gpt-5"], api_key="sk-or-v1-test")
+    results = runner.run([{"prompt": "q1"}], ["broken/model", "openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})
 
     cells = results[0]["cells"]
     assert cells["broken/model"]["error"] == "rate limited"
@@ -39,12 +54,12 @@ def test_one_model_failure_does_not_abort_other_cells(mock_call):
 
 
 @patch("runner.policy.check_policy")
-@patch("runner.openrouter.call_model", side_effect=_fake_call_model)
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
 def test_policy_blocked_case_skips_model_calls_entirely(mock_call, mock_policy):
     mock_policy.return_value = {"violates": True, "clause": "No medical advice.", "reason": "asks for diagnosis"}
 
     results = runner.run(
-        [{"prompt": "diagnose me"}], ["openai/gpt-5"], api_key="sk-or-v1-test", policy_text="No medical advice."
+        [{"prompt": "diagnose me"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"}, policy_text="No medical advice."
     )
 
     cell = results[0]["cells"]["openai/gpt-5"]
@@ -54,14 +69,14 @@ def test_policy_blocked_case_skips_model_calls_entirely(mock_call, mock_policy):
 
 
 @patch("runner.checks.run_checks")
-@patch("runner.openrouter.call_model", side_effect=_fake_call_model)
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
 def test_runs_rule_checks_when_defined(mock_call, mock_checks):
     mock_checks.return_value = [{"check": {"type": "contains", "value": "x"}, "passed": True}]
 
     results = runner.run(
         [{"prompt": "q1", "checks": [{"type": "contains", "value": "x"}]}],
         ["openai/gpt-5"],
-        api_key="sk-or-v1-test",
+        creds={"openrouter": "sk-or-v1-test"},
     )
 
     cell = results[0]["cells"]["openai/gpt-5"]
@@ -69,14 +84,194 @@ def test_runs_rule_checks_when_defined(mock_call, mock_checks):
 
 
 @patch("runner.judge.llm_judge")
-@patch("runner.openrouter.call_model", side_effect=_fake_call_model)
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
 def test_runs_judge_when_rubric_defined(mock_call, mock_judge):
     mock_judge.return_value = {"score": 4, "rationale": "Good."}
 
     results = runner.run(
-        [{"prompt": "q1", "rubric": "be accurate"}], ["openai/gpt-5"], api_key="sk-or-v1-test"
+        [{"prompt": "q1", "rubric": "be accurate"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"}
     )
 
     cell = results[0]["cells"]["openai/gpt-5"]
     assert cell["judge_score"] == 4
     assert cell["judge_rationale"] == "Good."
+
+
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_same_model_on_two_backends_gets_two_cells(mock_call):
+    targets = ["anthropic/claude-sonnet-4.5", "anthropic/claude-sonnet-4.5@bedrock"]
+
+    results = runner.run(
+        [{"prompt": "q1"}], targets,
+        creds={"openrouter": "sk-or-v1-test", "bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}},
+    )
+
+    cells = results[0]["cells"]
+    assert set(cells.keys()) == set(targets)
+    assert cells["anthropic/claude-sonnet-4.5@bedrock"]["response_text"] == "response from anthropic/claude-sonnet-4.5@bedrock"
+
+
+def test_missing_backend_creds_becomes_a_cell_error_not_a_crash():
+    results = runner.run([{"prompt": "q1"}], ["anthropic/claude-sonnet-4.5@bedrock"],
+                         creds={"openrouter": "sk-or-v1-test"})
+
+    cell = results[0]["cells"]["anthropic/claude-sonnet-4.5@bedrock"]
+    assert cell["error"] == "No Bedrock credentials supplied."
+
+
+@patch("runner.gateway.prepare_creds")
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_prepares_creds_once_and_threads_prepared_creds(mock_call, mock_prepare):
+    mock_prepare.return_value = {"openrouter": "sk-or-v1-prepared"}
+
+    runner.run([{"prompt": "q1"}, {"prompt": "q2"}], ["openai/gpt-5", "openai/gpt-5-mini"],
+               creds={"openrouter": "sk-or-v1-raw"})
+
+    mock_prepare.assert_called_once_with({"openrouter": "sk-or-v1-raw"})
+    for call in mock_call.call_args_list:
+        assert call[0][2] == {"openrouter": "sk-or-v1-prepared"}
+
+
+@patch("runner.gateway.call_target")
+def test_cell_error_is_scrubbed_of_credential_secrets(mock_call):
+    secret = "ABSKexamplesecretvalue1234567890"
+
+    def _side_effect(target, messages, creds, timeout=60):
+        raise gateway.GatewayError(f"bad header 'Bearer {secret}'")
+
+    mock_call.side_effect = _side_effect
+
+    creds = {"bedrock": {"region": "us-east-1", "api_key": secret}}
+    results = runner.run([{"prompt": "q1"}], ["anthropic/claude-sonnet-4.5@bedrock"], creds=creds)
+
+    error = results[0]["cells"]["anthropic/claude-sonnet-4.5@bedrock"]["error"]
+    assert secret not in error
+    assert "[REDACTED]" in error
+
+
+@patch("runner.judge.llm_judge", return_value={"score": 4, "rationale": "Good."})
+@patch("runner.policy.check_policy", return_value={"violates": False, "clause": "", "reason": ""})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_judge_backend_is_passed_to_policy_and_judge(mock_call, mock_policy, mock_judge):
+    runner.run([{"prompt": "q1", "rubric": "r"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+               policy_text="some policy", judge_backend="vertex")
+
+    assert mock_policy.call_args[1]["backend"] == "vertex"
+    assert mock_judge.call_args[1]["backend"] == "vertex"
+
+
+def _timed_response(latency_ms, output_tokens, cost=0.001):
+    return {"text": "answer", "latency_ms": latency_ms, "cost_usd": cost, "tokens": 40,
+            "output_tokens": output_tokens}
+
+
+@patch("runner.gateway.call_target")
+def test_cell_reports_tokens_per_sec(mock_call):
+    mock_call.return_value = _timed_response(2000, 100)
+    cell = runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})[0]["cells"]["openai/gpt-5"]
+    assert cell["tokens_per_sec"] == 50.0
+    assert cell["output_tokens"] == 100
+    assert cell["samples"] == 1
+    assert cell["latency_ms"] == 2000
+    assert cell["latency_ms_stdev"] is None
+
+
+@patch("runner.gateway.call_target")
+def test_cell_tokens_per_sec_none_without_output_tokens(mock_call):
+    mock_call.return_value = _timed_response(2000, 0)
+    cell = runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})[0]["cells"]["openai/gpt-5"]
+    assert cell["tokens_per_sec"] is None
+
+
+@patch("runner.judge.llm_judge", return_value={"score": 4, "rationale": "ok"})
+@patch("runner.gateway.call_target")
+def test_repeats_time_every_sample_but_judge_once(mock_call, mock_judge):
+    mock_call.side_effect = [_timed_response(1000, 100), _timed_response(2000, 100), _timed_response(3000, 150)]
+    cell = runner.run([{"prompt": "q", "rubric": "r"}], ["openai/gpt-5"],
+                      creds={"openrouter": "sk-or-v1-test"}, repeats=3)[0]["cells"]["openai/gpt-5"]
+    assert mock_call.call_count == 3
+    assert mock_judge.call_count == 1
+    assert cell["samples"] == 3
+    assert cell["latency_ms"] == 2000.0
+    assert cell["latency_ms_stdev"] == 816.5
+    assert cell["tokens_per_sec"] == round((100.0 + 50.0 + 50.0) / 3, 1)
+    assert cell["cost_usd"] == 0.003
+
+
+@patch("runner.gateway.call_target")
+def test_repeats_use_successful_samples_when_some_fail(mock_call):
+    mock_call.side_effect = [gateway.GatewayError("flaky"), _timed_response(1000, 100)]
+    cell = runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+                      repeats=2)[0]["cells"]["openai/gpt-5"]
+    assert cell["error"] is None
+    assert cell["samples"] == 1
+
+
+@patch("runner.gateway.call_target", side_effect=gateway.GatewayError("down"))
+def test_repeats_all_failing_is_a_cell_error(mock_call):
+    cell = runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+                      repeats=2)[0]["cells"]["openai/gpt-5"]
+    assert cell["error"] == "down"
+    assert mock_call.call_count == 2
+
+
+@patch("runner.judge.evaluate_response", return_value={"available": True, "overall": 4})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_successful_cell_gets_evaluation(mock_call, mock_eval):
+    results = runner.run([{"prompt": "q1"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})
+    cell = results[0]["cells"]["openai/gpt-5"]
+    assert cell["evaluation"] == {"available": True, "overall": 4}
+    assert mock_eval.call_count == 1
+
+
+@patch("runner.policy.check_policy", return_value={"violates": True, "clause": "c", "reason": "r"})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_blocked_cell_has_no_evaluation_key(mock_call, mock_policy):
+    results = runner.run([{"prompt": "q1"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+                         policy_text="policy")
+    cell = results[0]["cells"]["openai/gpt-5"]
+    assert "evaluation" not in cell
+    mock_call.assert_not_called()
+
+
+@patch("runner.gateway.call_target", side_effect=gateway.GatewayError("down"))
+def test_error_cell_has_no_evaluation_key(mock_call):
+    results = runner.run([{"prompt": "q1"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})
+    cell = results[0]["cells"]["openai/gpt-5"]
+    assert "evaluation" not in cell
+
+
+@patch("runner.judge.evaluate_response", return_value={"available": False, "reason": "Evaluation unavailable."})
+@patch("runner.gateway.call_target")
+def test_repeats_evaluate_once(mock_call, mock_eval):
+    mock_call.side_effect = [_timed_response(1000, 100), _timed_response(2000, 100), _timed_response(3000, 150)]
+    runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"}, repeats=3)
+    assert mock_eval.call_count == 1
+
+
+@patch("runner.judge.evaluate_response", return_value={"available": False, "reason": "Evaluation unavailable."})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_evaluate_response_receives_prompt_response_rubric_and_backend(mock_call, mock_eval):
+    runner.run([{"prompt": "q1", "rubric": "be nice"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+               judge_backend="vertex")
+    args, kwargs = mock_eval.call_args
+    assert args[0] == "q1"
+    assert args[1] == "response from openai/gpt-5"
+    assert args[2] == "be nice"
+    assert kwargs["backend"] == "vertex"
+
+
+@patch("runner.judge.evaluate_response", return_value={"available": False, "reason": "Evaluation unavailable."})
+@patch("runner.judge.llm_judge", return_value={"score": 4, "rationale": "ok"})
+@patch("runner.policy.check_policy", return_value={"violates": False, "clause": "", "reason": ""})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_meter_is_threaded_to_policy_judge_and_evaluation(mock_call, mock_policy, mock_judge, mock_eval):
+    meter = costs.CostMeter()
+
+    runner.run([{"prompt": "q", "rubric": "r"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+               policy_text="some policy", meter=meter)
+
+    assert mock_policy.call_args[1]["meter"] is meter
+    assert mock_judge.call_args[1]["meter"] is meter
+    assert mock_eval.call_args[1]["meter"] is meter
+    assert meter.totals()["model_usd"] == pytest.approx(0.001)

@@ -8,6 +8,10 @@ import matplotlib.pyplot as plt
 
 from fpdf import FPDF, Align, XPos, YPos
 
+import catalog
+import gateway
+import grading
+
 _NEW_LINE = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
 
 _GRADE_FILL_COLORS = {
@@ -22,20 +26,24 @@ _CATEGORY_COLORS = {
     "accuracy": "#4285F4",
     "rule_checks": "#0668E1",
     "cost_efficiency": "#1e8e3e",
-    "speed": "#f9ab00",
+    "response_time": "#f9ab00",
+    "throughput": "#e8710a",
 }
 _CATEGORY_LABELS = {
     "accuracy": "Accuracy",
     "rule_checks": "Rule Checks",
     "cost_efficiency": "Cost Efficiency",
-    "speed": "Speed",
+    "response_time": "Response Time",
+    "throughput": "Speed (tok/s)",
 }
 
 _CSV_FIELDS = [
     "prompt", "model_id", "status", "response_text", "judge_score",
-    "judge_rationale", "checks_passed", "checks_total", "cost_usd", "latency_ms", "tokens",
-    "accuracy_score", "rule_checks_score", "cost_efficiency_score", "speed_score",
+    "judge_rationale", "checks_passed", "checks_total", "cost_usd", "latency_ms", "tokens", "tokens_per_sec",
+    "accuracy_score", "rule_checks_score", "cost_efficiency_score", "response_time_score", "throughput_score",
     "best_model_for_prompt", "best_model_reason",
+    "answered_score", "overall_eval", "quality_score", "instruction_following_score", "completeness_score",
+    "helpfulness_score", "safety_score",
 ]
 
 
@@ -43,6 +51,25 @@ def _grade_fill(letter):
     if not letter:
         return (200, 200, 200)
     return _GRADE_FILL_COLORS.get(letter[0], (200, 200, 200))
+
+
+_PDF_REPLACEMENTS = {
+    "—": "-", "–": "-", "−": "-", "‘": "'", "’": "'", "“": '"', "”": '"',
+    "…": "...", "≈": "~", "•": "*", " ": " ", "→": "->",
+}
+
+
+def _pdf_safe(text):
+    text = "" if text is None else str(text)
+    for src, dst in _PDF_REPLACEMENTS.items():
+        text = text.replace(src, dst)
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
+def _is_reasoning(target):
+    model_id, _ = gateway.parse_target(target)
+    _, model = catalog.find_model(catalog.load_catalog(), model_id)
+    return bool(model and model.get("reasoning"))
 
 
 def _build_category_chart(grades):
@@ -67,7 +94,7 @@ def _build_category_chart(grades):
     ax.set_xticks(tick_positions)
     ax.set_xticklabels(models, rotation=15, ha="right")
     ax.set_ylim(0, 110)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.35), ncol=4, fontsize=8)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.35), ncol=5, fontsize=8)
     fig.tight_layout()
 
     buffer = io.BytesIO()
@@ -77,7 +104,7 @@ def _build_category_chart(grades):
     return buffer.getvalue()
 
 
-def build_pdf(run_result):
+def build_pdf(run_result, priority=None):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -92,26 +119,56 @@ def build_pdf(run_result):
         timestamp = datetime.fromtimestamp(created_at).strftime("%Y-%m-%d %H:%M:%S")
         pdf.cell(0, 6, f"Generated {timestamp}", **_NEW_LINE)
         pdf.set_text_color(0, 0, 0)
+
+    grades = run_result.get("grades") or {}
+    stats = run_result.get("stats") or {}
+
+    judge_info = run_result.get("judge")
+    if judge_info:
+        pdf.set_font("Courier", "", 9)
+        pdf.set_text_color(120, 120, 120)
+        backend_label = gateway.BACKEND_LABELS.get(judge_info.get("backend"), judge_info.get("backend"))
+        pdf.cell(0, 6, _pdf_safe(f"Judged by {judge_info.get('model')} via {backend_label}"), **_NEW_LINE)
+        pdf.set_text_color(0, 0, 0)
+
+    if priority:
+        ranking = grading.rank_targets(grades, stats, priority)
+        best_pick = ranking[0] if ranking else "n/a"
+        pdf.set_font("Courier", "", 9)
+        pdf.set_text_color(120, 120, 120)
+        pdf.cell(
+            0, 6, _pdf_safe(f"Priority: {grading.PRIORITY_LABELS[priority]} - best pick: {best_pick}"), **_NEW_LINE
+        )
+        pdf.set_text_color(0, 0, 0)
+
+    cost = run_result.get("cost")
+    if cost:
+        pdf.set_font("Courier", "", 9)
+        pdf.set_text_color(120, 120, 120)
+        pdf.cell(0, 6, _pdf_safe(
+            f"Total cost: ~${cost['total_usd']:.4f} (models ${cost['model_usd']:.4f} + "
+            f"judge ${cost['judge_usd']:.4f}, {cost['judge_calls']} judge calls)"
+        ), **_NEW_LINE)
+        pdf.set_text_color(0, 0, 0)
     pdf.ln(2)
 
     verdict = run_result.get("verdict") or {}
     pdf.set_font("Courier", "B", 12)
     pdf.cell(0, 8, "Overall Verdict", **_NEW_LINE)
     pdf.set_font("Courier", "", 10)
-    winner = verdict.get("winner") or "No verdict available"
-    pdf.multi_cell(0, 6, f"Winner: {winner}\n{verdict.get('rationale', '')}", **_NEW_LINE)
+    winner = _pdf_safe(verdict.get("winner") or "No verdict available")
+    rationale = _pdf_safe(verdict.get("rationale", ""))
+    pdf.multi_cell(0, 6, f"Winner: {winner}\n{rationale}", **_NEW_LINE)
     pdf.ln(4)
 
     pdf.set_font("Courier", "B", 12)
     pdf.cell(0, 8, "Leaderboard", **_NEW_LINE)
-    grades = run_result.get("grades") or {}
-    stats = run_result.get("stats") or {}
     if not grades:
         pdf.set_font("Courier", "", 10)
         pdf.multi_cell(0, 6, "No grading data available.", **_NEW_LINE)
     else:
-        col_widths = (60, 25, 25, 35, 35)
-        headers = ("Model", "Grade", "Score", "Total Cost", "Avg Latency")
+        col_widths = (55, 20, 20, 30, 30, 25)
+        headers = ("Model", "Grade", "Score", "Total Cost", "Avg Latency", "Tok/s")
         pdf.set_font("Courier", "B", 9)
         for width, header in zip(col_widths, headers):
             pdf.cell(width, 7, header, border=1)
@@ -122,7 +179,7 @@ def build_pdf(run_result):
             model_stats = stats.get(model_id) or {}
             letter = grade.get("letter")
 
-            pdf.cell(col_widths[0], 7, model_id, border=1)
+            pdf.cell(col_widths[0], 7, _pdf_safe(model_id), border=1)
 
             fill = _grade_fill(letter)
             pdf.set_fill_color(*fill)
@@ -138,14 +195,22 @@ def build_pdf(run_result):
 
             avg_latency = model_stats.get("avg_latency_ms")
             pdf.cell(col_widths[4], 7, f"{avg_latency:.0f}ms" if avg_latency is not None else "N/A", border=1, align="C")
+
+            tokens_per_sec = model_stats.get("avg_tokens_per_sec")
+            if tokens_per_sec is not None:
+                prefix = "~" if _is_reasoning(model_id) else ""
+                tok_s_text = f"{prefix}{tokens_per_sec:.1f}"
+            else:
+                tok_s_text = "N/A"
+            pdf.cell(col_widths[5], 7, tok_s_text, border=1, align="C")
             pdf.ln()
     pdf.ln(4)
 
     if any(g.get("categories") for g in grades.values()):
         pdf.set_font("Courier", "B", 12)
         pdf.cell(0, 8, "Category Breakdown", **_NEW_LINE)
-        cat_col_widths = (60, 30, 30, 30, 30)
-        cat_headers = ("Model", "Accuracy", "Checks", "Cost Eff.", "Speed")
+        cat_col_widths = (55, 25, 25, 25, 25, 25)
+        cat_headers = ("Model", "Accuracy", "Checks", "Cost Eff.", "Resp. Time", "Speed")
         pdf.set_font("Courier", "B", 9)
         for width, header in zip(cat_col_widths, cat_headers):
             pdf.cell(width, 7, header, border=1)
@@ -154,8 +219,8 @@ def build_pdf(run_result):
         pdf.set_font("Courier", "", 9)
         for model_id, grade in grades.items():
             categories = grade.get("categories") or {}
-            pdf.cell(cat_col_widths[0], 7, model_id, border=1)
-            for width, key in zip(cat_col_widths[1:], ("accuracy", "rule_checks", "cost_efficiency", "speed")):
+            pdf.cell(cat_col_widths[0], 7, _pdf_safe(model_id), border=1)
+            for width, key in zip(cat_col_widths[1:], _CATEGORY_COLORS.keys()):
                 value = categories.get(key)
                 pdf.cell(width, 7, f"{value:.0f}" if value is not None else "N/A", border=1, align="C")
             pdf.ln()
@@ -166,32 +231,109 @@ def build_pdf(run_result):
             pdf.image(io.BytesIO(chart_bytes), x=Align.C, w=170)
             pdf.ln(4)
 
+    suggestions = run_result.get("suggestions") or {}
+    advice = run_result.get("advice") or ""
+    bias_note = run_result.get("bias_note") or ""
+    if any(suggestions.values()) or advice or bias_note:
+        pdf.set_font("Courier", "B", 12)
+        pdf.cell(0, 8, "Suggestions", **_NEW_LINE)
+        pdf.set_font("Courier", "", 9)
+        for target, suggestion in suggestions.items():
+            if target not in stats:
+                continue
+            target_label = _pdf_safe(target)
+            if suggestion:
+                name = _pdf_safe(suggestion["name"])
+                reason = _pdf_safe(suggestion["reason"])
+                pdf.multi_cell(0, 5, f"{target_label}: try {name} - {reason}", **_NEW_LINE)
+            else:
+                pdf.multi_cell(0, 5, f"{target_label}: good fit - no better option in this catalog", **_NEW_LINE)
+
+        if advice:
+            pdf.ln(2)
+            pdf.multi_cell(0, 5, _pdf_safe(advice), **_NEW_LINE)
+
+        if bias_note:
+            pdf.ln(2)
+            pdf.set_text_color(120, 120, 120)
+            pdf.multi_cell(0, 5, _pdf_safe(bias_note), **_NEW_LINE)
+            pdf.set_text_color(0, 0, 0)
+        pdf.ln(2)
+
+    # Shown whenever a "~" (approximate tok/s) prefix could actually appear in the
+    # Leaderboard above, independent of whether a Suggestions section rendered.
+    if any(
+        _is_reasoning(target) for target in grades
+        if (stats.get(target) or {}).get("avg_tokens_per_sec") is not None
+    ):
+        pdf.set_font("Courier", "", 8)
+        pdf.set_text_color(120, 120, 120)
+        pdf.multi_cell(0, 5, "~ = approximate: includes hidden reasoning tokens on some providers.", **_NEW_LINE)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(2)
+
     pdf.set_font("Courier", "B", 12)
     pdf.cell(0, 8, "Test Cases", **_NEW_LINE)
     for row in run_result.get("results") or []:
         pdf.set_font("Courier", "B", 10)
-        pdf.multi_cell(0, 6, f"Prompt: {row['test_case']['prompt']}", **_NEW_LINE)
+        pdf.multi_cell(0, 6, _pdf_safe(f"Prompt: {row['test_case']['prompt']}"), **_NEW_LINE)
 
         best_model = row.get("best_model")
         if best_model and best_model.get("model_id"):
             pdf.set_font("Courier", "", 9)
             pdf.set_text_color(30, 142, 62)
-            pdf.multi_cell(0, 5, f"  Recommended: {best_model['model_id']} - {best_model['reason']}", **_NEW_LINE)
+            best_model_id = _pdf_safe(best_model["model_id"])
+            best_model_reason = _pdf_safe(best_model["reason"])
+            pdf.multi_cell(0, 5, f"  Recommended: {best_model_id} - {best_model_reason}", **_NEW_LINE)
             pdf.set_text_color(0, 0, 0)
 
         pdf.set_font("Courier", "", 9)
         for model_id, cell in row["cells"].items():
+            safe_model_id = _pdf_safe(model_id)
             if cell.get("blocked"):
-                pdf.multi_cell(0, 5, f"  [{model_id}] BLOCKED - {cell.get('policy_clause')}: {cell.get('policy_reason')}", **_NEW_LINE)
+                policy_clause = _pdf_safe(cell.get("policy_clause"))
+                policy_reason = _pdf_safe(cell.get("policy_reason"))
+                pdf.multi_cell(0, 5, f"  [{safe_model_id}] BLOCKED - {policy_clause}: {policy_reason}", **_NEW_LINE)
             elif cell.get("error"):
-                pdf.multi_cell(0, 5, f"  [{model_id}] ERROR: {cell.get('error')}", **_NEW_LINE)
+                pdf.multi_cell(0, 5, f"  [{safe_model_id}] ERROR: {_pdf_safe(cell.get('error'))}", **_NEW_LINE)
             else:
-                pdf.multi_cell(0, 5, f"  [{model_id}] {cell.get('response_text')}", **_NEW_LINE)
+                pdf.multi_cell(0, 5, f"  [{safe_model_id}] {_pdf_safe(cell.get('response_text'))}", **_NEW_LINE)
                 if cell.get("judge_score") is not None:
-                    pdf.multi_cell(0, 5, f"    judge score: {cell['judge_score']}/5 - {cell.get('judge_rationale')}", **_NEW_LINE)
+                    judge_rationale = _pdf_safe(cell.get("judge_rationale"))
+                    pdf.multi_cell(0, 5, f"    judge score: {cell['judge_score']}/5 - {judge_rationale}", **_NEW_LINE)
+                evaluation = cell.get("evaluation")
+                if evaluation and evaluation.get("available"):
+                    answered_score = (evaluation.get("answered") or {}).get("score")
+                    answered_text = f"{answered_score}/5" if answered_score is not None else "n/a"
+                    pdf.multi_cell(
+                        0, 5, _pdf_safe(f"    eval: overall {evaluation.get('overall')}/5, answered {answered_text}"),
+                        **_NEW_LINE,
+                    )
+                elif evaluation:
+                    pdf.multi_cell(0, 5, "    eval: Evaluation unavailable.", **_NEW_LINE)
         pdf.ln(2)
 
     return bytes(pdf.output())
+
+
+def _eval_csv_values(cell):
+    evaluation = cell.get("evaluation") or {}
+    if not evaluation.get("available"):
+        return ["", "", "", "", "", "", ""]
+
+    def score(key):
+        value = (evaluation.get(key) or {}).get("score")
+        return value if value is not None else ""
+
+    return [
+        score("answered"),
+        evaluation.get("overall", ""),
+        score("quality"),
+        score("instruction_following"),
+        score("completeness"),
+        score("helpfulness"),
+        score("safety"),
+    ]
 
 
 def build_csv(run_result):
@@ -213,22 +355,24 @@ def build_csv(run_result):
                 categories.get("accuracy", ""),
                 categories.get("rule_checks", ""),
                 categories.get("cost_efficiency", ""),
-                categories.get("speed", ""),
+                categories.get("response_time", ""),
+                categories.get("throughput", ""),
             ]
             category_values = [v if v is not None else "" for v in category_values]
+            eval_values = _eval_csv_values(cell)
 
             if cell.get("blocked"):
                 writer.writerow([
                     prompt, model_id, "blocked", "", "",
                     f"{cell.get('policy_clause')}: {cell.get('policy_reason')}",
-                    "", "", "", "", "",
-                    *category_values, best_model_id, best_model_reason,
+                    "", "", "", "", "", "",
+                    *category_values, best_model_id, best_model_reason, *eval_values,
                 ])
             elif cell.get("error"):
                 writer.writerow([
                     prompt, model_id, "error", cell.get("error"), "",
-                    "", "", "", "", "", "",
-                    *category_values, best_model_id, best_model_reason,
+                    "", "", "", "", "", "", "",
+                    *category_values, best_model_id, best_model_reason, *eval_values,
                 ])
             else:
                 checks = cell.get("checks") or []
@@ -239,7 +383,8 @@ def build_csv(run_result):
                     cell.get("judge_rationale") or "",
                     checks_passed, len(checks),
                     cell.get("cost_usd"), cell.get("latency_ms"), cell.get("tokens"),
-                    *category_values, best_model_id, best_model_reason,
+                    cell.get("tokens_per_sec") if cell.get("tokens_per_sec") is not None else "",
+                    *category_values, best_model_id, best_model_reason, *eval_values,
                 ])
 
     return buffer.getvalue()

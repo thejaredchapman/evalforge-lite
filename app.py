@@ -1,7 +1,6 @@
 import io
 import logging
 import os
-import re
 import threading
 import time
 import uuid
@@ -9,26 +8,26 @@ from collections import deque
 
 from flask import Flask, jsonify, render_template, request, send_file
 
+import analysis
+import availability
 import catalog
+import config
+import costs
+import gateway
 import grading
 import judge
 import limiter
 import policy
 import report
 import runner
+import scrub
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
-_SECRET_RE = re.compile(r"\b(sk|pk)-[A-Za-z0-9_-]{8,}\b")
-
 _policy_store = {}
 _run_history_store = {}
 _store_lock = threading.Lock()
-
-
-def _scrub(message):
-    return _SECRET_RE.sub("[REDACTED]", message)
 
 
 def _error_response(message, status_code):
@@ -53,10 +52,23 @@ def index():
     return _with_session_cookie(resp, session_id)
 
 
+@app.route("/availability")
+def availability_page():
+    return render_template("availability.html")
+
+
 @app.route("/api/catalog")
 def api_catalog():
     cat = catalog.load_catalog()
-    return jsonify({"providers": cat, "frontier": catalog.frontier_models(cat)})
+    return jsonify({
+        "providers": cat,
+        "frontier": catalog.frontier_models(cat),
+        "max_models": config.MAX_MODELS,
+        "priority_weights": grading.PRIORITY_WEIGHTS,
+        "priority_labels": grading.PRIORITY_LABELS,
+        "regions": catalog.load_regions(),
+        "provider_links": gateway.PROVIDER_LINKS,
+    })
 
 
 @app.route("/api/suggest")
@@ -71,12 +83,28 @@ def api_openrouter_models():
     return jsonify({"models": catalog.fetch_openrouter_models()})
 
 
+@app.route("/api/availability")
+def api_availability():
+    return jsonify(availability.snapshot())
+
+
 @app.route("/api/evaluate-prompt", methods=["POST"])
 def api_evaluate_prompt():
     session_id = _get_session_id()
     body = request.get_json(silent=True)
-    if not isinstance(body, dict) or not body.get("prompt") or not body.get("api_key"):
-        return _with_session_cookie(_error_response("Missing required field: prompt and api_key.", 400), session_id)
+    if not isinstance(body, dict):
+        return _with_session_cookie(_error_response("Request body must be JSON.", 400), session_id)
+    raw_creds = gateway.normalize_creds(body.get("creds"), body.get("api_key"))
+    if not body.get("prompt") or raw_creds is None:
+        return _with_session_cookie(
+            _error_response("Missing required field: prompt and creds (or api_key).", 400), session_id
+        )
+    judge_backend = body.get("judge_backend", "openrouter")
+    if judge_backend not in gateway.BACKENDS:
+        return _with_session_cookie(_error_response("Invalid judge_backend.", 400), session_id)
+    creds, creds_error = gateway.check_run_creds(raw_creds, [], judge_backend)
+    if creds_error:
+        return _with_session_cookie(_error_response(creds_error, 400), session_id)
 
     limit_result = limiter.check_and_record(f"evaluate:{session_id}", time.time())
     if not limit_result["allowed"]:
@@ -84,7 +112,7 @@ def api_evaluate_prompt():
         resp.status_code = 429
         return _with_session_cookie(resp, session_id)
 
-    result = judge.evaluate_prompt(body["prompt"], api_key=body["api_key"])
+    result = judge.evaluate_prompt(body["prompt"], creds=creds, backend=judge_backend)
     return _with_session_cookie(jsonify(result), session_id)
 
 
@@ -98,64 +126,24 @@ def api_policy():
     return _with_session_cookie(jsonify({"ok": True}), session_id)
 
 
-def _aggregate_stats(results, model_ids):
-    stats = {
-        m: {
-            "judge_scores": [], "rule_check_results": [], "judge_rationales": [],
-            "costs": [], "latencies": [],
-        }
-        for m in model_ids
-    }
-    for row in results:
-        for model_id, cell in row["cells"].items():
-            if cell.get("blocked") or cell.get("error"):
-                continue
-            if cell.get("judge_score") is not None:
-                stats[model_id]["judge_scores"].append(cell["judge_score"])
-            if cell.get("judge_rationale"):
-                stats[model_id]["judge_rationales"].append(cell["judge_rationale"])
-            for check_result in cell.get("checks") or []:
-                stats[model_id]["rule_check_results"].append(check_result["passed"])
-            stats[model_id]["costs"].append(cell.get("cost_usd", 0.0))
-            stats[model_id]["latencies"].append(cell.get("latency_ms", 0))
-    return stats
-
-
-def _cost_latency_stats(agg_stats):
-    result = {}
-    for model_id, s in agg_stats.items():
-        total_cost = sum(s["costs"])
-        avg_latency = sum(s["latencies"]) / len(s["latencies"]) if s["latencies"] else 0.0
-        result[model_id] = {
-            "total_cost_usd": round(total_cost, 6),
-            "avg_latency_ms": round(avg_latency, 1),
-        }
-    return result
-
-
-def _category_scores_by_model(agg_stats, stats):
-    all_costs = [stats[m]["total_cost_usd"] for m, s in agg_stats.items() if s["costs"]]
-    all_latencies = [stats[m]["avg_latency_ms"] for m, s in agg_stats.items() if s["latencies"]]
-
-    result = {}
-    for model_id, s in agg_stats.items():
-        cost = stats[model_id]["total_cost_usd"] if s["costs"] else None
-        latency = stats[model_id]["avg_latency_ms"] if s["latencies"] else None
-        result[model_id] = grading.category_scores(
-            s["judge_scores"], s["rule_check_results"], cost, all_costs, latency, all_latencies
-        )
-    return result
-
-
 def _validate_run_body(body):
     if not isinstance(body, dict):
         return "Request body must be JSON."
-    if not body.get("api_key") or not isinstance(body["api_key"], str):
-        return "Missing required field: api_key."
+    if not isinstance(body.get("models"), list) or not all(isinstance(m, str) for m in body["models"]):
+        return "Missing required field: models."
+    if any(not m.strip() for m in body["models"]):
+        return "Model ids must be non-empty strings."
+    if gateway.normalize_creds(body.get("creds"), body.get("api_key")) is None:
+        return "Missing required field: creds (or api_key)."
+    if body.get("judge_backend", "openrouter") not in gateway.BACKENDS:
+        return "Invalid judge_backend."
     if not isinstance(body.get("test_cases"), list):
         return "Missing required field: test_cases."
-    if not isinstance(body.get("models"), list):
-        return "Missing required field: models."
+    if len(body["models"]) > config.MAX_MODELS:
+        return f"Pick at most {config.MAX_MODELS} models."
+    repeats = body.get("repeats", 1)
+    if type(repeats) is not int or repeats not in (1, 2, 3):
+        return "repeats must be 1, 2, or 3."
     return None
 
 
@@ -168,9 +156,18 @@ def api_run():
     if error:
         return _with_session_cookie(_error_response(error, 400), session_id)
 
-    api_key = body["api_key"]
+    raw_creds = gateway.normalize_creds(body.get("creds"), body.get("api_key"))
+    judge_backend = body.get("judge_backend", "openrouter")
     test_cases = body["test_cases"]
     model_ids = body["models"]
+    repeats = body.get("repeats", 1)
+
+    with _store_lock:
+        policy_text = _policy_store.get(session_id)
+
+    creds, creds_error = gateway.check_run_creds(raw_creds, model_ids, judge_backend)
+    if creds_error:
+        return _with_session_cookie(_error_response(creds_error, 400), session_id)
 
     limit_result = limiter.check_and_record(session_id, time.time())
     if not limit_result["allowed"]:
@@ -178,45 +175,19 @@ def api_run():
         resp.status_code = 429
         return _with_session_cookie(resp, session_id)
 
-    with _store_lock:
-        policy_text = _policy_store.get(session_id)
-
     try:
-        results = runner.run(test_cases, model_ids, api_key=api_key, policy_text=policy_text)
-
-        for row in results:
-            row["best_model"] = grading.best_model_for_test_case(row["cells"])
-
-        agg_stats = _aggregate_stats(results, model_ids)
-        grades = {
-            model_id: grading.grade_model(
-                s["judge_scores"], s["rule_check_results"], s["judge_rationales"]
-            )
-            for model_id, s in agg_stats.items()
-        }
-        stats = _cost_latency_stats(agg_stats)
-        categories = _category_scores_by_model(agg_stats, stats)
-        for model_id in grades:
-            grades[model_id]["categories"] = categories[model_id]
-
-        verdict = {"winner": None, "rationale": "No models were run."}
-        if model_ids:
-            verdict = judge.overall_verdict(
-                {m: {"score": grades[m]["score"], "letter": grades[m]["letter"]} for m in model_ids},
-                api_key=api_key,
-            )
+        meter = costs.CostMeter()
+        results = runner.run(
+            test_cases, model_ids, creds=creds, policy_text=policy_text, judge_backend=judge_backend,
+            repeats=repeats, meter=meter,
+        )
+        run_result = analysis.build_run_result(results, model_ids, creds, judge_backend, meter=meter)
     except Exception as e:
-        logger.exception("run failed")
-        return _with_session_cookie(_error_response(_scrub(str(e)), 503), session_id)
+        message = scrub.scrub(str(e), raw_creds)
+        logger.error("run failed: %s", message)
+        return _with_session_cookie(_error_response(message, 503), session_id)
 
-    run_result = {
-        "run_id": str(uuid.uuid4()),
-        "created_at": time.time(),
-        "results": results,
-        "grades": grades,
-        "stats": stats,
-        "verdict": verdict,
-    }
+    run_result = {"run_id": str(uuid.uuid4()), "created_at": time.time(), **run_result}
 
     with _store_lock:
         history = _run_history_store.setdefault(session_id, deque(maxlen=5))
@@ -250,11 +221,15 @@ def _find_run(session_id, run_id):
 @app.route("/api/report")
 def api_report():
     session_id = _get_session_id()
+    priority = request.args.get("priority", "balanced")
+    if priority not in grading.PRIORITY_WEIGHTS:
+        return _with_session_cookie(_error_response("Invalid priority.", 400), session_id)
+
     run_result = _find_run(session_id, request.args.get("run_id"))
     if not run_result:
         return _with_session_cookie(_error_response("no_run_available", 404), session_id)
 
-    pdf_bytes = report.build_pdf(run_result)
+    pdf_bytes = report.build_pdf(run_result, priority=priority)
     resp = send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",

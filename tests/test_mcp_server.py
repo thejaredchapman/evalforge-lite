@@ -1,6 +1,9 @@
 import base64
+import io
+import json
 from unittest.mock import patch
 
+import gateway
 import limiter
 import mcp_server
 
@@ -35,7 +38,9 @@ def test_evaluate_prompt_returns_score_and_feedback(mock_evaluate):
     mock_evaluate.return_value = {"score": 2, "feedback": "Too vague."}
     result = mcp_server.evaluate_prompt("Tell me stuff", api_key="sk-or-v1-test")
     assert result == {"score": 2, "feedback": "Too vague."}
-    mock_evaluate.assert_called_once_with("Tell me stuff", api_key="sk-or-v1-test")
+    mock_evaluate.assert_called_once_with(
+        "Tell me stuff", creds={"openrouter": "sk-or-v1-test"}, backend="openrouter"
+    )
 
 
 @patch("mcp_server.judge.evaluate_prompt")
@@ -74,9 +79,10 @@ def test_run_comparison_missing_api_key_returns_error():
     assert "api_key" in result["error"]
 
 
+@patch("analysis.judge.explain_recommendations", return_value="")
 @patch("mcp_server.runner.run")
 @patch("mcp_server.judge.overall_verdict")
-def test_run_comparison_returns_results_grades_and_verdict(mock_verdict, mock_run):
+def test_run_comparison_returns_results_grades_and_verdict(mock_verdict, mock_run, mock_explain):
     mock_run.return_value = [{
         "test_case": {"prompt": "q1"},
         "cells": {
@@ -151,6 +157,26 @@ def test_get_report_after_a_run_returns_pdf_base64(mock_verdict, mock_run):
     assert pdf_bytes.startswith(b"%PDF")
 
 
+@patch("mcp_server.analysis.build_run_result")
+@patch("mcp_server.runner.run", return_value=[])
+def test_get_report_after_priority_run_includes_priority_line(mock_run, mock_build):
+    mock_build.return_value = {
+        "results": [], "verdict": {"winner": None, "rationale": ""}, "suggestions": {}, "advice": "",
+        "judge": {"backend": "openrouter", "model": "m"}, "bias_note": "",
+        "grades": {"a/x": {"score": 95, "categories": {"response_time": 0, "throughput": 0, "cost_efficiency": 0}},
+                   "a/y": {"score": 70, "categories": {"response_time": 100, "throughput": 100, "cost_efficiency": 100}}},
+        "stats": {"a/x": {"ok_cells": 1, "avg_latency_ms": 900}, "a/y": {"ok_cells": 1, "avg_latency_ms": 100}},
+    }
+    mcp_server.run_comparison(test_cases=[], models=["a/x", "a/y"], api_key="sk-or-v1-test", priority="fastest")
+
+    result = mcp_server.get_report()
+    import pdfplumber
+    pdf_bytes = base64.b64decode(result["pdf_base64"])
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    assert "Priority:" in text
+
+
 @patch("mcp_server.runner.run")
 @patch("mcp_server.judge.overall_verdict")
 def test_get_report_honors_run_id(mock_verdict, mock_run):
@@ -203,3 +229,190 @@ def test_run_history_caps_at_five(mock_verdict, mock_run):
         mcp_server.run_comparison(**payload)
 
     assert len(mcp_server.list_runs()["runs"]) == 5
+
+
+@patch("mcp_server.runner.run")
+@patch("mcp_server.judge.overall_verdict")
+def test_run_comparison_accepts_creds_and_judge_backend(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexampleexampleexample1234"}}
+
+    result = mcp_server.run_comparison(
+        test_cases=[{"prompt": "q1"}], models=["anthropic/claude-sonnet-4.5@bedrock"],
+        creds=creds, judge_backend="bedrock",
+    )
+
+    assert "error" not in result
+    _, run_kwargs = mock_run.call_args
+    assert run_kwargs["creds"] == creds
+    assert run_kwargs["judge_backend"] == "bedrock"
+    assert mock_verdict.call_args[1]["backend"] == "bedrock"
+
+
+def test_run_comparison_invalid_judge_backend_returns_error():
+    result = mcp_server.run_comparison(test_cases=[], models=[], creds={"openrouter": "sk-or-v1-test"},
+                                       judge_backend="azure")
+    assert result["error"] == "Invalid judge_backend."
+
+
+def test_run_comparison_policy_without_judge_creds_returns_error():
+    mcp_server.set_policy("No medical advice.")
+    result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"],
+                                       api_key="sk-or-v1-test", judge_backend="vertex")
+    assert "Vertex AI" in result["error"]
+
+
+def test_run_comparison_error_scrubs_secret_by_exact_value():
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    with patch("mcp_server.runner.run", side_effect=Exception(f"signature mismatch for {secret}")):
+        result = mcp_server.run_comparison(
+            test_cases=[{"prompt": "q1"}], models=["anthropic/claude-sonnet-4.5@bedrock"],
+            creds={"bedrock": {"region": "us-east-1", "access_key_id": "AKIAABCDEFGHIJKLMNOP",
+                               "secret_access_key": secret}},
+            judge_backend="bedrock",
+        )
+    assert secret not in result["error"]
+
+
+@patch("mcp_server.judge.evaluate_prompt")
+def test_evaluate_prompt_tool_accepts_creds(mock_evaluate):
+    mock_evaluate.return_value = {"score": 3, "feedback": "ok"}
+    creds = {"vertex": {"project": "my-project-123", "region": "us-central1", "access_token": "ya29.x"}}
+
+    mcp_server.evaluate_prompt("hi", creds=creds, judge_backend="vertex")
+
+    mock_evaluate.assert_called_once_with("hi", creds=creds, backend="vertex")
+
+
+def test_evaluate_prompt_tool_without_creds_returns_error():
+    result = mcp_server.evaluate_prompt("hi")
+    assert "creds" in result["error"]
+
+
+def test_run_comparison_without_judge_creds_returns_error_even_without_policy():
+    result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"],
+                                       api_key="sk-or-v1-test", judge_backend="bedrock")
+    assert result["error"] == "Bedrock credentials are required for the judge backend."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+def test_run_comparison_invalid_backend_creds_rejected_before_rate_limit():
+    result = mcp_server.run_comparison(
+        test_cases=[{"prompt": "q1"}], models=["anthropic/claude-sonnet-4.5@bedrock"],
+        creds={"openrouter": "sk-or-v1-test", "bedrock": {"region": "x.evil.com#", "api_key": "ABSKexample"}},
+    )
+    assert result["error"] == "Bedrock region is missing or invalid."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+def test_evaluate_prompt_tool_without_judge_creds_returns_error():
+    result = mcp_server.evaluate_prompt("hi", api_key="sk-or-v1-test", judge_backend="vertex")
+    assert result["error"] == "Vertex AI credentials are required for the judge backend."
+
+
+def test_run_comparison_rejects_more_than_four_models():
+    result = mcp_server.run_comparison(test_cases=[], models=["a/1", "a/2", "a/3", "a/4", "a/5"], api_key="sk-or-v1-test")
+    assert result == {"error": "Pick at most 4 models."}
+
+
+def test_run_comparison_rejects_invalid_priority_and_repeats():
+    assert mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test", priority="vibes") == {"error": "Invalid priority."}
+    assert mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test", repeats=5) == {"error": "repeats must be 1, 2, or 3."}
+    assert mcp_server.run_comparison(test_cases=[], models=[], api_key="sk-or-v1-test", repeats=2.0) == {"error": "repeats must be 1, 2, or 3."}
+
+
+def test_run_comparison_rejects_empty_string_model_id():
+    result = mcp_server.run_comparison(test_cases=[], models=["openai/gpt-5", "   "], api_key="sk-or-v1-test")
+    assert result == {"error": "Model ids must be non-empty strings."}
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+@patch("mcp_server.analysis.build_run_result")
+@patch("mcp_server.runner.run", return_value=[])
+def test_run_comparison_returns_ranking_for_priority(mock_run, mock_build):
+    mock_build.return_value = {
+        "results": [], "verdict": {"winner": None, "rationale": ""}, "suggestions": {}, "advice": "",
+        "judge": {"backend": "openrouter", "model": "m"}, "bias_note": "",
+        "grades": {"a/x": {"score": 95, "categories": {"response_time": 0, "throughput": 0, "cost_efficiency": 0}},
+                   "a/y": {"score": 70, "categories": {"response_time": 100, "throughput": 100, "cost_efficiency": 100}}},
+        "stats": {"a/x": {"ok_cells": 1, "avg_latency_ms": 900}, "a/y": {"ok_cells": 1, "avg_latency_ms": 100}},
+    }
+    result = mcp_server.run_comparison(test_cases=[], models=["a/x", "a/y"], api_key="sk-or-v1-test", priority="fastest", repeats=2)
+    assert result["ranking"] == ["a/y", "a/x"]
+    assert result["best_for_priority"] == "a/y"
+    assert mock_run.call_args[1]["repeats"] == 2
+
+
+@patch("mcp_server.availability.snapshot")
+def test_list_availability_returns_snapshot(mock_snapshot):
+    mock_snapshot.return_value = {"generated_at": 1, "openrouter": {}, "backends": {}}
+    assert mcp_server.list_availability() == {"generated_at": 1, "openrouter": {}, "backends": {}}
+
+
+@patch("mcp_server.runner.run")
+@patch("mcp_server.judge.overall_verdict")
+def test_run_comparison_accepts_foundry_target_and_judge_backend(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    creds = {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}}
+
+    result = mcp_server.run_comparison(
+        test_cases=[{"prompt": "q1"}], models=["openai/gpt-5@foundry"], creds=creds, judge_backend="foundry",
+    )
+
+    assert "error" not in result
+    _, run_kwargs = mock_run.call_args
+    assert run_kwargs["creds"] == creds
+    assert run_kwargs["judge_backend"] == "foundry"
+
+
+def test_run_comparison_scrubs_foundry_api_key_on_error():
+    secret = "fake-foundry-secret-key-1234567890"
+    with patch("mcp_server.runner.run", side_effect=Exception(f"request failed using {secret}")):
+        result = mcp_server.run_comparison(
+            test_cases=[{"prompt": "q1"}], models=["openai/gpt-5@foundry"],
+            creds={"foundry": {"resource": "my-resource", "region": "eastus", "api_key": secret}},
+            judge_backend="foundry",
+        )
+    assert secret not in result["error"]
+
+
+def test_run_comparison_includes_cost_and_per_cell_evaluation():
+    with patch("mcp_server.runner.run") as mock_run, patch("mcp_server.judge.overall_verdict") as mock_verdict:
+        mock_run.return_value = [{
+            "test_case": {"prompt": "q1"},
+            "cells": {
+                "openai/gpt-5": {
+                    "model_id": "openai/gpt-5", "blocked": False, "error": None,
+                    "response_text": "answer", "latency_ms": 10, "cost_usd": 0.01, "tokens": 5,
+                    "checks": [], "judge_score": None, "judge_rationale": None,
+                    "evaluation": {"available": True, "overall": 4},
+                }
+            },
+        }]
+        mock_verdict.return_value = {"winner": "openai/gpt-5", "rationale": "best"}
+        result = mcp_server.run_comparison(
+            test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"], api_key="sk-or-v1-test",
+        )
+    assert result["cost"] == {"model_usd": 0.0, "judge_usd": 0.0, "total_usd": 0.0, "judge_calls": 0}
+    assert result["results"][0]["cells"]["openai/gpt-5"]["evaluation"]["overall"] == 4
+
+
+def test_run_comparison_evaluation_gateway_error_never_leaks_secret():
+    secret = "sk-or-v1-mcpevalsecret1234567890"
+
+    def _fake_call_target(target, messages, creds, timeout=60):
+        return {"text": "answer", "latency_ms": 10, "cost_usd": 0.0, "tokens": 5, "output_tokens": 3}
+
+    with patch("gateway.call_target", side_effect=_fake_call_target), \
+         patch("judge.gateway.call_backend", side_effect=gateway.GatewayError(f"token {secret} rejected")):
+        result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"], api_key=secret)
+
+    serialized = json.dumps(result)
+    assert secret not in serialized
+    assert result["results"][0]["cells"]["openai/gpt-5"]["evaluation"] == {
+        "available": False, "reason": "Evaluation unavailable.",
+    }
+    runs = mcp_server.list_runs()
+    assert secret not in json.dumps(runs)

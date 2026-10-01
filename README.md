@@ -2,15 +2,16 @@
 
 <!-- mcp-name: io.github.thejaredchapman/evalforge-lite -->
 
-Compare text LLMs across providers via OpenRouter — bring your own API key.
-Available as a web app and as an MCP server.
+Compare text LLMs across providers — OpenRouter, Amazon Bedrock, Google
+Vertex AI, and Microsoft Foundry — bring your own credentials. Available as
+a web app and as an MCP server.
 
 ## Setup
 
     python3.12 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
-    cp .env.example .env   # optional: override JUDGE_MODEL
+    cp .env.example .env   # optional: override the per-backend judge models
 
 Requires Python 3.10+ (the `mcp` package's floor); developed and tested on 3.12.
 
@@ -18,27 +19,203 @@ Requires Python 3.10+ (the `mcp` package's floor); developed and tested on 3.12.
 
     python app.py
 
-Open http://localhost:8000, paste your OpenRouter API key (never sent
-anywhere but this server, never stored server-side beyond the request),
-add test cases, pick models, and run. Set `PORT=<port>` to run on a
-different port, or `FLASK_DEBUG=1` if you need Flask's interactive
-debugger — it's off by default since this app handles live API keys.
+Open http://localhost:8000, add credentials for the backend(s) you want to
+use (never sent anywhere but this server, never stored server-side beyond
+the request), add test cases, pick models, and run. Set `PORT=<port>` to
+run on a different port, or `FLASK_DEBUG=1` if you need Flask's
+interactive debugger — it's off by default since this app handles live
+credentials.
 
 ### Try it out
 
-1. Paste an OpenRouter API key into the "OpenRouter API key" field.
+1. Open the credentials panel and fill in the backend(s) you'll use (see
+   [Backends](#backends-openrouter-amazon-bedrock-google-vertex-ai-microsoft-foundry) below).
 2. Add a test case: a prompt, and optionally a rubric (scored by an LLM
    judge) and/or rule-based checks (e.g. "contains", "max_length").
-3. Pick two or more models, ideally from different providers, from the
-   frontier list or by browsing providers.
-4. Click **Run comparison** — you'll get a leaderboard with letter grades,
-   per-model cost/latency, and an overall verdict, plus a per-cell view of
-   every model's actual response.
+3. Pick two to four models, ideally from different providers, from the
+   frontier list or by browsing providers — click a model's Bedrock/Vertex
+   chip to also run it on that backend. (`X` and `X@bedrock` count as two
+   of your four.)
+4. Click **Run comparison** — you'll get a side-by-side comparison and a
+   leaderboard with letter grades, per-model cost/latency, and an overall
+   verdict, plus a per-cell view of every model's actual response. See
+   [Comparing up to 4 models](#comparing-up-to-4-models) below for how to
+   read it.
 5. Download a PDF report or CSV export of the run.
 
 **Heads up before you click Run repeatedly while testing:** it's
 rate-limited to 3 runs per 8 hours per browser session (resets if you
 restart the server) — see [Notes](#notes).
+
+## Backends: OpenRouter, Amazon Bedrock, Google Vertex AI, Microsoft Foundry
+
+Every request carries its own credentials — nothing is read from server
+env/config, and credentials are never stored beyond the request that used
+them.
+
+- **OpenRouter** — a single API key.
+- **Amazon Bedrock** — either a Bedrock API key (bearer token) or an AWS
+  access key id + secret access key (optionally with a session token), plus
+  a region.
+- **Google Vertex AI** — either an OAuth access token or a service-account
+  JSON key, plus a GCP project id and a region.
+- **Microsoft Foundry** — either an API key or a Microsoft Entra ID access
+  token, plus an Azure AI Foundry resource name and a region.
+
+A model *target* is `"<catalog id>"` for OpenRouter, or `"<catalog
+id>@bedrock"` / `"<catalog id>@vertex"` / `"<catalog id>@foundry"` to run
+that same model on Bedrock, Vertex, or Foundry instead. In the UI, pick a
+target by clicking a model's Bedrock, Vertex, or Foundry chip (shown under
+any model the catalog has a route for) rather than typing the `@backend`
+suffix by hand.
+
+The **judge backend** picker (next to the credentials panel) selects which
+backend runs the LLM judge and the policy gate — it can differ from the
+backend(s) the models under test run on, but needs its own credentials
+filled in.
+
+Bedrock/Vertex/Foundry costs shown in the leaderboard and reports are
+*estimates*, computed from the per-token prices in `data/providers.json`,
+not costs reported back by AWS/GCP/Azure billing.
+
+Some Bedrock/Vertex/Foundry routes are region-restricted: Vertex's Llama
+MaaS models are only offered in certain regions (e.g. `us-east5`), Gemini
+preview models may need the `global` region instead of a specific one, and
+Foundry's Llama routes are only curated for a handful of regions. The
+region dropdowns warn with a ⚠ when a selected model isn't listed for your
+chosen region on that backend, and suggest which regions it is listed in —
+see [Where models run](#where-models-run) below for the full picture.
+
+## Comparing up to 4 models
+
+Pick up to 4 models (`X` and `X@bedrock` count as two) and each run shows a
+side-by-side comparison in addition to the leaderboard.
+
+### The four metrics
+
+- **Quality** — the model's overall grade: judge score and rule-check pass
+  rate, blended 70/30 (same score as the leaderboard).
+- **Response time** — how long the full answer took to arrive, scored
+  relative to the other models in *this* run (lower is better).
+- **Speed (tok/s)** — output tokens per second, so a model isn't penalized
+  for writing a longer answer. Also relative to this run. Reasoning models
+  (marked with "≈") report speed that includes hidden reasoning tokens on
+  some providers, so it's approximate.
+- **Cost** — relative total cost across this run's calls (lower is better).
+
+A model with no successful responses (every cell errored or was blocked by
+the policy gate) skips these bars — the column just shows the error/blocked
+count instead.
+
+### What matters most?
+
+The priority selector (Balanced / Best quality / Fastest / Cheapest)
+re-weights quality, response time, speed, and cost instantly, client-side —
+no new run. It does **not** reorder the side-by-side columns; instead the
+column that scores best for the selected priority gets a "Best for
+\<priority\>" badge, shown only once at least 2 models have successful
+results (with a single result there's nothing to compare, so no badge is
+shown). Missing metrics are excluded and the remaining weights are
+renormalized, so one `None` value doesn't skew the score. The same weights
+drive the downloaded PDF, which shows the priority you had selected and its
+best pick.
+
+### Suggestions
+
+Each column may suggest a same-provider, same-backend sibling model — e.g.
+a faster or cheaper tier from the same provider you already used, never a
+model from another provider or an OpenRouter `~latest` alias, and never a
+model already in your comparison. Rules pick *which* sibling to suggest
+(based on quality, response time/speed, or cost gaps); the judge model then
+writes a short plain-English explanation of the trade-offs, falling back to
+the rule's own one-line reason if that call fails or tries to name a model
+outside the comparison. **This adds one extra judge call per run.**
+
+Click **Try it** on a suggestion to swap it into your selection: if the
+weak model it's replacing is still selected, the suggestion takes its place
+(your count stays the same); if you've already deselected that model, the
+suggestion is just added instead, subject to the 4-model cap. It doesn't
+start a new run automatically — click **Run comparison** again to test it.
+
+### Repeat each prompt
+
+Set "Repeat each prompt" to 2x or 3x to re-send each prompt multiple times
+for steadier timing — response time and speed are averaged (with a spread
+shown) across the repeats, while judge scoring and rule checks only run
+once, on the first response. It still counts as a single run against the
+rate limit, but it multiplies the number of model calls (and cost)
+accordingly.
+
+### Cost estimate
+
+Before you run, "Estimated cost" gives a rough total: roughly
+`chars / 4` input tokens plus 500 output tokens per call, times your
+selected models, test cases, and repeats, priced from the catalog
+(Bedrock/Vertex) or OpenRouter's live prices. It excludes judge calls and
+shows "unavailable" for any selected model without pricing data. It
+recalculates whenever you change your selection, test cases, or repeats.
+After the run, the cost banner above the leaderboard shows the actual
+total instead, judge calls included — see
+[Per-response evaluation, latency comparison & total cost](#per-response-evaluation-latency-comparison--total-cost).
+
+### Judge disclosure
+
+The side-by-side view and PDF both show "Judged by \<model\> via
+\<backend\>". If the judge shares a provider with one of the models you're
+comparing (e.g. an Anthropic judge scoring a Claude model), a note warns
+that "the judge ... is from the same family as ..." and that scores may
+lean in that model's favor — for important decisions, re-run with a judge
+from a different provider.
+
+### Per-response evaluation, latency comparison & total cost
+
+Every successful response gets a combined judge call that scores six
+criteria 1-5: whether it **answered the question**, **quality**,
+**instruction following**, **completeness**, **helpfulness**, and
+**safety** — plus strengths, weaknesses, a short reasoning paragraph, and
+an overall 1-5 score. It's collapsible under each response
+("Evaluation"), open by default for the first prompt. These scores blend
+into **Quality**: if a rubric or rule checks were also used, that
+judge-score/rule-check blend is further averaged 50/50 with the
+evaluation's score; with neither, Quality *is* the evaluation score; with
+no successful evaluation either, Quality stays unscored ("N/A"). If a
+response's evaluation call fails or returns something unparseable, its
+card shows "Evaluation unavailable" and that response is simply excluded
+from the evaluation half of Quality — it never fails the run.
+
+Each side-by-side column also shows "Overall eval x/5" and how its average
+response time compares to the fastest model in the run (e.g. "1.8x slower
+than fastest (2,340 ms)", or "Fastest"). A **Latency comparison** panel
+below the leaderboard shows this per-prompt as a bar per model (fastest
+highlighted), with the run's averages at the bottom.
+
+A **cost banner** at the top of the results totals the whole run: model
+calls plus every judge call (the rubric judge, the per-response
+evaluation, the policy gate, the overall verdict, and the suggestion
+explainer) — e.g. "This run cost ≈ $0.0123 — models $0.0101 + judge
+$0.0022 (6 judge calls)." As with the Bedrock/Vertex/Foundry model costs
+elsewhere in this app, judge costs on those backends are estimates from
+catalog prices, not provider billing; the banner notes this whenever any
+compared model uses one of those backends.
+
+## Where models run
+
+The `/availability` page (linked from the header) shows, for every catalog
+model: whether it's currently listed on OpenRouter (checked live, cached
+for up to 6 hours) and which regions it's curated for on Bedrock, Vertex,
+and Foundry. It's filterable by model/provider name, backend, and region,
+and sortable by clicking any column header. Curated region data is
+dated and sourced — it can lag reality, so verify on the provider's own
+page before relying on it for a production decision.
+
+## Provider status & reporting problems
+
+The header's "Provider status" menu links to each backend's live status
+page (OpenRouter, AWS, Google Cloud, Azure), and the footer links to each
+backend's own place to report a problem (GitHub issues for this app itself,
+plus each cloud provider's support/feedback page). When a model call fails,
+the error popup also adds "Check \<backend\> status" and "Report to
+\<backend\>" links for the specific backend that failed.
 
 ## MCP server
 
@@ -58,14 +235,58 @@ Claude Code) pointing at this venv's Python and this file:
 }
 ```
 
-Exposes 8 tools: `list_models`, `suggest_models`, `set_policy`, `evaluate_prompt`,
-`run_comparison`, `list_runs`, `get_report`, `get_report_csv` — the same
-functionality as the web app's API, minus file-upload policy support
+Exposes 9 tools: `list_models`, `suggest_models`, `set_policy`, `evaluate_prompt`,
+`run_comparison`, `list_availability`, `list_runs`, `get_report`, `get_report_csv`
+— the same functionality as the web app's API, minus file-upload policy support
 (`set_policy` takes plain text).
 State (policy, run history, rate limit) is per-process, since one stdio
 connection is one client. It's a local-only interface (stdio requires the
 server to run on the same machine as the client) — there's nothing to
 "deploy" for it.
+
+`run_comparison` and `evaluate_prompt` both take a `creds` argument —
+`{"openrouter"?: str, "bedrock"?: {region, api_key} | {region, access_key_id,
+secret_access_key, session_token?}, "vertex"?: {project, region, access_token}
+| {project, region, service_account_json}, "foundry"?: {resource, region, api_key}
+| {resource, region, access_token}}` — plus a `judge_backend` (default
+`"openrouter"`) picking which backend runs the judge and policy gate. Creds for
+the judge backend are always required, and malformed creds for any backend the
+call uses are rejected up front, before the call counts against the rate limit. The
+legacy `api_key` string argument still works and is treated as an
+OpenRouter key (equivalent to `creds={"openrouter": api_key}`).
+
+`run_comparison` also takes `models` (at most 4 — more returns `{"error":
+"Pick at most 4 models."}` before the rate limiter is touched), `priority`
+(`"balanced"` (default) | `"quality"` | `"fastest"` | `"cheapest"`, invalid
+values error), and `repeats` (`1` (default), `2`, or `3`; anything else
+errors) for repeating each prompt for steadier timing. Its result includes
+everything a plain run does plus:
+
+- `suggestions` — per-model same-provider/same-backend suggestion (or
+  `null`) from the rule-based advisor.
+- `advice` — the judge's plain-English explanation of the suggestions and
+  trade-offs (empty string if that extra call failed or produced nothing
+  usable).
+- `ranking` — target ids ordered best-first for the requested `priority`
+  (targets with no successful responses are excluded).
+- `best_for_priority` — the first entry of `ranking`, or `null`.
+- `judge` — `{"backend": ..., "model": ...}`, the backend and resolved
+  model id that scored this run.
+- `bias_note` — a warning string (or `""`) when the judge shares a provider
+  with one of the compared models.
+- `cost` — `{"model_usd", "judge_usd", "total_usd", "judge_calls"}` for the
+  whole run (estimated for Bedrock/Vertex/Foundry calls, both model and
+  judge).
+- Each successful result cell gains `evaluation` — the per-response
+  evaluation (or `{"available": false, "reason": "Evaluation unavailable."}`
+  if that call failed or was unparseable). Blocked and error cells have no
+  `evaluation` key.
+- `stats[<model>]` gains `evaluation_avg` and `latency_vs_fastest`.
+- Each result row gains `latency_ranking` — that prompt's successful
+  targets ordered fastest-first with their latency in ms.
+- `list_availability` returns the same snapshot as `/api/availability`: live
+  OpenRouter listing status (6-hour cache) plus curated Bedrock/Vertex/Foundry
+  region coverage.
 
 ### Publishing to the official MCP registry
 
@@ -101,8 +322,9 @@ correct default for local-only use) — either run behind gunicorn the same
 way (`gunicorn --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app`), or
 set `HOST=0.0.0.0` if invoking `python app.py` directly. Once deployed,
 the URL is reachable by anyone who has it; each visitor supplies their own
-OpenRouter key (never yours), so you aren't billed for their usage, but
-your hosting's bandwidth/CPU is shared across everyone who uses it.
+credentials for whichever backend(s) they use (never yours), so you aren't
+billed for their model usage, but your hosting's bandwidth/CPU is shared
+across everyone who uses it.
 
 ## Test
 
@@ -112,6 +334,31 @@ Every LLM/HTTP call is mocked (or, for the MCP end-to-end tests, exercised
 with an empty test-case/model list that never reaches the network) — the
 suite needs no API key and makes no network calls.
 
+## Upgrading
+
+If you're integrating against the CSV export or the API/MCP `categories`
+field from before the 4-model comparison work, note:
+
+- CSV: the `speed_score` column was renamed `response_time_score`. Two
+  columns were added: `tokens_per_sec` (right after `latency_ms`) and
+  `throughput_score` (right after `response_time_score`). Current column
+  order is `..., latency_ms, tokens, tokens_per_sec, accuracy_score,
+  rule_checks_score, cost_efficiency_score, response_time_score,
+  throughput_score, best_model_for_prompt, best_model_reason`.
+- API/MCP: `categories.speed` in a run result's `grades[<model>].categories`
+  is now `categories.response_time`, and a new `categories.throughput` key
+  was added alongside it.
+- CSV: 7 trailing columns were added after `best_model_reason`:
+  `answered_score, overall_eval, quality_score, instruction_following_score,
+  completeness_score, helpfulness_score, safety_score` (blank for
+  blocked/error cells or when a response's evaluation is unavailable).
+- API/MCP: `grades[<model>].categories` gained an `evaluation` key, and
+  `grades[<model>].score` ("Quality") may now be blended with the
+  per-response evaluation score — see
+  [Per-response evaluation, latency comparison & total cost](#per-response-evaluation-latency-comparison--total-cost).
+  A run result gained `cost`; `stats[<model>]` gained `evaluation_avg` and
+  `latency_vs_fastest`; each result row gained `latency_ranking`.
+
 ## Features
 
 - Compare any combination of catalog models on a shared set of prompts,
@@ -120,12 +367,22 @@ suite needs no API key and makes no network calls.
   before any model is called (upload `.txt`/`.md`/`.pdf` in the web app;
   pass plain text via the `set_policy` MCP tool).
 - Leaderboard with letter grades, a category breakdown (accuracy,
-  rule-check pass rate, cost-efficiency, speed — cost/speed scored
-  relative to the other models in the same run), and colorful charts of
-  those scores in both the web view and the PDF report.
+  rule-check pass rate, cost efficiency, response time, and speed —
+  cost/response time/speed scored relative to the other models in the same
+  run), and colorful charts of those scores in both the web view and the
+  PDF report.
+- Side-by-side comparison of up to 4 models with a "what matters most?"
+  priority selector, same-provider/backend model suggestions, and a
+  pre-run cost estimate — see
+  [Comparing up to 4 models](#comparing-up-to-4-models).
 - Per-prompt best-model recommendation: for each test case, which model
   handled that specific prompt best and why — computed from data already
   collected, no extra LLM call.
+- Per-response evaluation (answered/quality/instruction following/
+  completeness/helpfulness/safety, strengths, weaknesses, reasoning,
+  overall score), a latency comparison panel, and a total-cost banner for
+  the whole run (model calls plus every judge call) — see
+  [Per-response evaluation, latency comparison & total cost](#per-response-evaluation-latency-comparison--total-cost).
 - Optional pre-run prompt quality feedback (an explicit "Evaluate prompt"
   action, not automatic) — clarity/specificity feedback before you spend
   a real run on a prompt that might need rewording.
@@ -150,8 +407,21 @@ suite needs no API key and makes no network calls.
   live `/models` endpoint if one stops working.
 - Rate-limited to 3 runs per 8 hours per session (in-memory, resets on
   server restart) in both interfaces.
+- Bedrock/Vertex/Foundry region data in `data/regions.json` and each
+  model's `routes.<backend>.regions` in `data/providers.json` are curated
+  snapshots (dated, with a source link on the `/availability` page) — not
+  a live per-account listing. They can go stale as providers add or drop
+  regions; verify on the provider's own page if a run fails with a
+  region/availability error.
 - All state is in-memory only, capped at 5 runs per session — nothing is
   persisted to disk.
+
+## Contributing
+
+Contributions are welcome: bug reports, model-catalog updates, new checks,
+docs, and new backends. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
+tests, and the pull request process. When the app shows an error, the popup's
+**Report an issue on GitHub** button opens a pre-filled bug report.
 
 ## License
 

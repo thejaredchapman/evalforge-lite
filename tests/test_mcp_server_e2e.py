@@ -80,4 +80,4 @@ async def test_evaluate_prompt_tool_is_registered_with_required_args():
             await session.initialize()
             tools = await session.list_tools()
             tool = next(t for t in tools.tools if t.name == "evaluate_prompt")
-            assert set(tool.input_schema["required"]) == {"prompt", "api_key"}
+            assert set(tool.input_schema["required"]) == {"prompt"}

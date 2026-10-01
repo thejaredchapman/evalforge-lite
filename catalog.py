@@ -10,8 +10,20 @@ _CACHE_TTL_SECONDS = 300
 _cache = {"data": None, "fetched_at": 0.0}
 
 
+def _pricing(model):
+    pricing = model.get("pricing") or {}
+    try:
+        return {"prompt": float(pricing["prompt"]), "completion": float(pricing["completion"])}
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def load_catalog():
     return config.load_providers()
+
+
+def load_regions():
+    return config.load_regions()
 
 
 def fetch_openrouter_models():
@@ -38,7 +50,7 @@ def fetch_openrouter_models():
         return []
 
     models = [
-        {"id": m["id"], "name": m.get("name", m["id"]), "created": m.get("created", 0)}
+        {"id": m["id"], "name": m.get("name", m["id"]), "created": m.get("created", 0), "pricing": _pricing(m)}
         for m in data.get("data", [])
     ]
     _cache["data"] = models
@@ -68,3 +80,40 @@ def suggest_family(catalog_dict, model_id):
                     if m["family"] == family and m["id"] != model_id
                 ]
     return []
+
+
+def route_for(catalog_dict, model_id, backend):
+    for provider in catalog_dict.values():
+        for model in provider["models"]:
+            if model["id"] == model_id:
+                return (model.get("routes") or {}).get(backend)
+    return None
+
+
+def price_for_native_id(catalog_dict, backend, native_model_id):
+    """Find the catalog price for a backend-native model id — what gateway.call_backend
+    receives directly for a judge call (not routed through call_target, which already
+    prices by catalog model id). Native ids are compared literally, including any
+    unresolved "{geo}" template, since that's the same templated id the catalog route
+    stores and the same one judge.py/policy.py pass straight through.
+    """
+    for provider in catalog_dict.values():
+        for model in provider["models"]:
+            route = (model.get("routes") or {}).get(backend)
+            if route and route.get("id") == native_model_id:
+                return route.get("price")
+    return None
+
+
+def find_model(catalog_dict, model_id):
+    for provider_id, provider in catalog_dict.items():
+        for model in provider["models"]:
+            if model["id"] == model_id:
+                return provider_id, model
+    return None, None
+
+
+def region_availability(catalog_dict, model_id, backend, region):
+    route = route_for(catalog_dict, model_id, backend)
+    known_regions = list((route or {}).get("regions") or [])
+    return {"listed": region in known_regions, "known_regions": known_regions}

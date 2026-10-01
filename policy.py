@@ -5,7 +5,7 @@ import re
 import pdfplumber
 
 import config
-import openrouter
+import gateway
 
 POLICY_PROMPT_TEMPLATE = """You are a compliance checker. Given a company policy and a user's prompt, determine whether the prompt violates the policy.
 
@@ -37,19 +37,21 @@ def _extract_json(text):
     return json.loads(match.group(0))
 
 
-def check_policy(prompt, policy_text, api_key, judge_model=None):
+def check_policy(prompt, policy_text, creds, backend="openrouter", judge_model=None, meter=None):
     if not policy_text:
         return {"violates": False, "clause": "", "reason": ""}
 
     try:
-        model = judge_model or config.JUDGE_MODEL
+        model = judge_model or config.JUDGE_MODELS[backend]
         llm_prompt = POLICY_PROMPT_TEMPLATE.format(policy=policy_text, prompt=prompt)
-        result = openrouter.call_model(model, [{"role": "user", "content": llm_prompt}], api_key=api_key)
+        result = gateway.call_backend(backend, model, [{"role": "user", "content": llm_prompt}], creds)
+        if meter is not None:
+            meter.add("judge", result.get("cost_usd", 0.0))
         parsed = _extract_json(result["text"])
         violates = bool(parsed["violates"])
         clause = str(parsed.get("clause", ""))
         reason = str(parsed.get("reason", ""))
-    except (openrouter.OpenRouterError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (gateway.GatewayError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return {"violates": True, "clause": "", "reason": "Could not verify policy compliance."}
 
     return {"violates": violates, "clause": clause, "reason": reason}

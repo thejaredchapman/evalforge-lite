@@ -83,3 +83,28 @@ def test_call_model_raises_openrouter_error_on_malformed_json(mock_post):
 
     with pytest.raises(openrouter.OpenRouterError):
         openrouter.call_model("openai/gpt-4o-mini", [{"role": "user", "content": "hi"}], api_key="sk-or-v1-test")
+
+
+def test_openrouter_error_is_a_gateway_error():
+    from errors import GatewayError
+    assert issubclass(openrouter.OpenRouterError, GatewayError)
+
+
+@patch("openrouter.requests.post")
+def test_call_model_returns_output_tokens(mock_post):
+    mock_post.return_value = _mock_response({
+        "choices": [{"message": {"content": "ok"}}],
+        "usage": {"total_tokens": 30, "completion_tokens": 12, "cost": 0.0},
+    })
+    result = openrouter.call_model("openai/gpt-4o-mini", [{"role": "user", "content": "hi"}], api_key="sk-or-v1-test")
+    assert result["output_tokens"] == 12
+
+
+@patch("openrouter.requests.post")
+def test_call_model_output_tokens_default_zero(mock_post):
+    mock_post.return_value = _mock_response({
+        "choices": [{"message": {"content": "ok"}}],
+        "usage": {"total_tokens": 30, "completion_tokens": "n/a"},
+    })
+    result = openrouter.call_model("openai/gpt-4o-mini", [{"role": "user", "content": "hi"}], api_key="sk-or-v1-test")
+    assert result["output_tokens"] == 0

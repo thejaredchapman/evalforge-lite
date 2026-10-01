@@ -2,7 +2,11 @@ import io
 import re
 from unittest.mock import patch
 
+import pytest
+
 import app as app_module
+import gateway
+import judge
 import limiter
 
 
@@ -54,7 +58,9 @@ def test_api_evaluate_prompt_returns_score_and_feedback(mock_evaluate):
     mock_evaluate.return_value = {"score": 2, "feedback": "Too vague."}
     resp = _client().post("/api/evaluate-prompt", json={"prompt": "Tell me stuff", "api_key": "sk-or-v1-test"})
     assert resp.get_json() == {"score": 2, "feedback": "Too vague."}
-    mock_evaluate.assert_called_once_with("Tell me stuff", api_key="sk-or-v1-test")
+    mock_evaluate.assert_called_once_with(
+        "Tell me stuff", creds={"openrouter": "sk-or-v1-test"}, backend="openrouter"
+    )
 
 
 def test_api_evaluate_prompt_missing_prompt_returns_400():
@@ -133,9 +139,10 @@ def test_api_run_non_json_body_returns_400():
     assert resp.status_code == 400
 
 
+@patch("analysis.judge.explain_recommendations", return_value="")
 @patch("app.runner.run")
 @patch("app.judge.overall_verdict")
-def test_api_run_returns_results_grades_and_verdict(mock_verdict, mock_run):
+def test_api_run_returns_results_grades_and_verdict(mock_verdict, mock_run, mock_explain):
     mock_run.return_value = [{
         "test_case": {"prompt": "q1"},
         "cells": {
@@ -285,3 +292,301 @@ def test_api_runs_history_caps_at_five(mock_verdict, mock_run):
 
     runs_resp = client.get("/api/runs")
     assert len(runs_resp.get_json()["runs"]) == 5
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_accepts_creds_and_judge_backend(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    creds = {"bedrock": {"region": "us-east-1", "api_key": "ABSKexampleexampleexample1234"}}
+
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}],
+        "models": ["anthropic/claude-sonnet-4.5@bedrock"],
+        "creds": creds,
+        "judge_backend": "bedrock",
+    })
+
+    assert resp.status_code == 200
+    _, run_kwargs = mock_run.call_args
+    assert run_kwargs["creds"] == creds
+    assert run_kwargs["judge_backend"] == "bedrock"
+    _, verdict_kwargs = mock_verdict.call_args
+    assert verdict_kwargs["backend"] == "bedrock"
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_legacy_api_key_becomes_openrouter_creds(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+
+    _client().post("/api/run", json={"test_cases": [], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-test"})
+
+    _, run_kwargs = mock_run.call_args
+    assert run_kwargs["creds"] == {"openrouter": "sk-or-v1-test"}
+    assert run_kwargs["judge_backend"] == "openrouter"
+
+
+def test_api_run_invalid_judge_backend_returns_400():
+    resp = _client().post("/api/run", json={
+        "test_cases": [], "models": [], "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "azure",
+    })
+    assert resp.status_code == 400
+    assert "judge_backend" in resp.get_json()["error"]
+
+
+def test_api_run_creds_must_be_an_object():
+    resp = _client().post("/api/run", json={"test_cases": [], "models": [], "creds": "sk-or-v1-test"})
+    assert resp.status_code == 400
+
+
+def test_api_run_policy_without_judge_creds_returns_400_without_spending_a_run():
+    client = _client()
+    client.post(
+        "/api/policy",
+        data={"file": (io.BytesIO(b"No medical advice."), "policy.txt")},
+        content_type="multipart/form-data",
+    )
+
+    resp = client.post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"],
+        "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "vertex",
+    })
+
+    assert resp.status_code == 400
+    assert "Vertex AI" in resp.get_json()["error"]
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+def test_api_run_error_response_scrubs_aws_secret_by_exact_value(caplog):
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    with patch("app.runner.run", side_effect=Exception(f"signature mismatch for {secret}")):
+        resp = _client().post("/api/run", json={
+            "test_cases": [{"prompt": "q1"}], "models": ["anthropic/claude-sonnet-4.5@bedrock"],
+            "creds": {
+                "openrouter": "sk-or-v1-test",
+                "bedrock": {"region": "us-east-1", "access_key_id": "AKIAABCDEFGHIJKLMNOP",
+                            "secret_access_key": secret},
+            },
+        })
+
+    assert resp.status_code == 503
+    assert secret not in resp.get_json()["error"]
+    assert secret not in caplog.text
+
+
+@patch("app.judge.evaluate_prompt")
+def test_api_evaluate_prompt_accepts_creds_and_judge_backend(mock_evaluate):
+    mock_evaluate.return_value = {"score": 4, "feedback": "ok"}
+    creds = {"vertex": {"project": "my-project-123", "region": "us-central1", "access_token": "ya29.x"}}
+
+    resp = _client().post("/api/evaluate-prompt", json={"prompt": "hi", "creds": creds, "judge_backend": "vertex"})
+
+    assert resp.status_code == 200
+    mock_evaluate.assert_called_once_with("hi", creds=creds, backend="vertex")
+
+
+def test_api_evaluate_prompt_invalid_judge_backend_returns_400():
+    resp = _client().post("/api/evaluate-prompt", json={
+        "prompt": "hi", "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "azure",
+    })
+    assert resp.status_code == 400
+
+
+def test_api_run_without_judge_creds_returns_400_even_without_policy():
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"],
+        "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "bedrock",
+    })
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Bedrock credentials are required for the judge backend."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+def test_api_run_invalid_backend_creds_rejected_before_rate_limit():
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["anthropic/claude-sonnet-4.5@bedrock"],
+        "creds": {"openrouter": "sk-or-v1-test", "bedrock": {"region": "x.evil.com#", "api_key": "ABSKexample"}},
+    })
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Bedrock region is missing or invalid."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_ignores_bad_creds_for_backends_the_run_does_not_use(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"],
+        "creds": {"openrouter": "sk-or-v1-test", "vertex": {"project": "BAD PROJECT", "region": "us-central1",
+                                                             "access_token": "ya29.x"}},
+    })
+    assert resp.status_code == 200
+
+
+def test_api_evaluate_prompt_without_judge_creds_returns_400():
+    resp = _client().post("/api/evaluate-prompt", json={
+        "prompt": "hi", "creds": {"openrouter": "sk-or-v1-test"}, "judge_backend": "vertex",
+    })
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Vertex AI credentials are required for the judge backend."
+
+
+def test_api_run_rejects_more_than_four_models():
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q"}], "models": ["a/1", "a/2", "a/3", "a/4", "a/5"], "api_key": "sk-or-v1-test"})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Pick at most 4 models."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+@pytest.mark.parametrize("bad_model", ["", "   "])
+def test_api_run_rejects_empty_string_model_id(bad_model):
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q"}], "models": ["openai/gpt-5", bad_model], "api_key": "sk-or-v1-test"})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Model ids must be non-empty strings."
+    assert all(len(v) == 0 for v in limiter._attempts.values())
+
+
+@pytest.mark.parametrize("repeats", [0, 4, "2", True, 2.0])
+def test_api_run_rejects_bad_repeats(repeats):
+    resp = _client().post("/api/run", json={
+        "test_cases": [], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-test", "repeats": repeats})
+    assert resp.status_code == 400
+
+
+@patch("app.analysis.build_run_result")
+@patch("app.runner.run")
+def test_api_run_passes_repeats_and_returns_analysis_fields(mock_run, mock_build):
+    mock_run.return_value = []
+    mock_build.return_value = {"results": [], "grades": {}, "stats": {}, "verdict": {"winner": None, "rationale": ""},
+                               "suggestions": {}, "advice": "", "judge": {"backend": "openrouter", "model": "m"},
+                               "bias_note": ""}
+    resp = _client().post("/api/run", json={
+        "test_cases": [], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-test", "repeats": 3})
+    assert resp.status_code == 200
+    assert mock_run.call_args[1]["repeats"] == 3
+    body = resp.get_json()
+    assert {"run_id", "created_at", "suggestions", "advice", "judge", "bias_note"} <= set(body)
+
+
+def test_api_catalog_exposes_cap_and_priority_weights():
+    body = _client().get("/api/catalog").get_json()
+    assert body["max_models"] == 4
+    assert set(body["priority_weights"]) == {"balanced", "quality", "fastest", "cheapest"}
+    assert body["priority_labels"]["fastest"] == "Fastest"
+
+
+def test_api_report_rejects_invalid_priority():
+    assert _client().get("/api/report?priority=vibes").status_code == 400
+
+
+@patch("app.availability.snapshot")
+def test_api_availability_returns_snapshot(mock_snapshot):
+    mock_snapshot.return_value = {"generated_at": 123, "openrouter": {}, "backends": {}}
+    resp = _client().get("/api/availability")
+    assert resp.get_json() == {"generated_at": 123, "openrouter": {}, "backends": {}}
+
+
+def test_api_catalog_exposes_regions_and_provider_links():
+    body = _client().get("/api/catalog").get_json()
+    assert set(body["regions"]) == {"bedrock", "vertex", "foundry"}
+    assert set(body["provider_links"]) == {"openrouter", "bedrock", "vertex", "foundry"}
+    assert body["provider_links"]["foundry"]["status"] == "https://azure.status.microsoft/en-us/status"
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_accepts_foundry_target_and_judge_backend(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    creds = {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}}
+
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5@foundry"],
+        "creds": creds, "judge_backend": "foundry",
+    })
+
+    assert resp.status_code == 200
+    _, run_kwargs = mock_run.call_args
+    assert run_kwargs["creds"] == creds
+    assert run_kwargs["judge_backend"] == "foundry"
+
+
+def test_api_run_error_response_scrubs_foundry_api_key(caplog):
+    secret = "fake-foundry-secret-key-1234567890"
+    with patch("app.runner.run", side_effect=Exception(f"request failed using {secret}")):
+        resp = _client().post("/api/run", json={
+            "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5@foundry"],
+            "creds": {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": secret}},
+            "judge_backend": "foundry",
+        })
+    assert resp.status_code == 503
+    body = resp.get_json()
+    assert secret not in body["error"]
+    assert secret not in caplog.text
+
+
+def test_availability_page_returns_200():
+    resp = _client().get("/availability")
+    assert resp.status_code == 200
+    assert b"availability-table" in resp.data
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_includes_cost_and_per_cell_evaluation(mock_verdict, mock_run):
+    mock_run.return_value = [{
+        "test_case": {"prompt": "q1"},
+        "cells": {
+            "openai/gpt-5": {
+                "model_id": "openai/gpt-5", "blocked": False, "error": None,
+                "response_text": "answer", "latency_ms": 10, "cost_usd": 0.01, "tokens": 5,
+                "checks": [], "judge_score": None, "judge_rationale": None,
+                "evaluation": {
+                    "available": True, "overall": 4,
+                    "answered": {"score": 5, "explanation": "ok"}, "quality": {"score": 4, "explanation": "ok"},
+                    "instruction_following": {"score": 4, "explanation": "ok"},
+                    "completeness": {"score": 4, "explanation": "ok"}, "helpfulness": {"score": 4, "explanation": "ok"},
+                    "safety": {"score": 5, "explanation": "ok"}, "strengths": [], "weaknesses": [], "reasoning": "ok",
+                },
+            }
+        },
+    }]
+    mock_verdict.return_value = {"winner": "openai/gpt-5", "rationale": "best"}
+
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"], "api_key": "sk-or-v1-test",
+    })
+
+    body = resp.get_json()
+    assert resp.status_code == 200
+    assert body["cost"] == {"model_usd": 0.0, "judge_usd": 0.0, "total_usd": 0.0, "judge_calls": 0}
+    assert body["results"][0]["cells"]["openai/gpt-5"]["evaluation"]["overall"] == 4
+
+
+def test_api_run_evaluation_gateway_error_never_leaks_secret(caplog):
+    secret = "sk-or-v1-evalsecret1234567890"
+
+    def _fake_call_target(target, messages, creds, timeout=60):
+        return {"text": "answer", "latency_ms": 10, "cost_usd": 0.0, "tokens": 5, "output_tokens": 3}
+
+    with patch("gateway.call_target", side_effect=_fake_call_target), \
+         patch("judge.gateway.call_backend", side_effect=gateway.GatewayError(f"token {secret} rejected")):
+        resp = _client().post("/api/run", json={
+            "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5"], "api_key": secret,
+        })
+
+    assert resp.status_code == 200
+    assert secret not in resp.get_data(as_text=True)
+    body = resp.get_json()
+    cell = body["results"][0]["cells"]["openai/gpt-5"]
+    assert cell["evaluation"] == {"available": False, "reason": "Evaluation unavailable."}
+    assert secret not in caplog.text
+    history_resp = _client().get("/api/runs")
+    assert secret not in history_resp.get_data(as_text=True)

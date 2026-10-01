@@ -21,28 +21,113 @@
 <body>
   <header>
     <h1>EvalForge <span class="accent-brand">Lite</span></h1>
-    <p class="tagline">Compare text LLMs across providers with your own OpenRouter key.</p>
+    <p class="tagline">Compare text LLMs via OpenRouter, Amazon Bedrock, Google Vertex AI, or Microsoft Foundry with your own credentials.</p>
     <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">&#127769;</button>
     <button id="menu-toggle" class="menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu">&#9776;</button>
   </header>
 
   <nav id="mobile-menu" class="mobile-menu" aria-label="Section navigation">
-    <a href="#api-key-section">API Key</a>
+    <a href="#creds-section">Credentials</a>
     <a href="#catalog-section">Models</a>
     <a href="#policy-section">Policy</a>
     <a href="#testcase-section">Test Cases</a>
     <a href="#run-section">Run</a>
     <a href="#results-section">Results</a>
+    <a href="/availability">Where models run</a>
   </nav>
   <div id="menu-overlay" class="menu-overlay" hidden></div>
 
-  <section id="api-key-section" class="card">
-    <label for="api-key">OpenRouter API key</label>
-    <input type="password" id="api-key" placeholder="sk-or-v1-...">
-    <span id="api-key-status" class="status-text"></span>
-    <p class="provider-blurb">
-      Don't have a key? <a href="https://openrouter.ai/workspaces/default/keys" target="_blank" rel="noopener">Get one at OpenRouter &rarr;</a>
-    </p>
+  <nav class="top-links" aria-label="Site links">
+    <a href="/availability">Where models run</a>
+    <details class="status-menu">
+      <summary>Provider status</summary>
+      <div class="status-menu-panel">
+        <a href="https://status.openrouter.ai" target="_blank" rel="noopener">OpenRouter</a>
+        <a href="https://health.aws.amazon.com/health/status" target="_blank" rel="noopener">AWS</a>
+        <a href="https://status.cloud.google.com" target="_blank" rel="noopener">Google Cloud</a>
+        <a href="https://azure.status.microsoft/en-us/status" target="_blank" rel="noopener">Azure</a>
+      </div>
+    </details>
+  </nav>
+
+  <section id="creds-section" class="card">
+    <div class="tab-row" role="tablist" aria-label="Credentials backend">
+      <button type="button" class="tab active" role="tab" id="tab-openrouter" aria-controls="panel-openrouter" aria-selected="true" data-backend="openrouter">OpenRouter</button>
+      <button type="button" class="tab" role="tab" id="tab-bedrock" aria-controls="panel-bedrock" aria-selected="false" tabindex="-1" data-backend="bedrock">Amazon Bedrock</button>
+      <button type="button" class="tab" role="tab" id="tab-vertex" aria-controls="panel-vertex" aria-selected="false" tabindex="-1" data-backend="vertex">Google Vertex AI</button>
+      <button type="button" class="tab" role="tab" id="tab-foundry" aria-controls="panel-foundry" aria-selected="false" tabindex="-1" data-backend="foundry">Microsoft Foundry</button>
+    </div>
+
+    <div class="cred-panel" role="tabpanel" id="panel-openrouter" aria-labelledby="tab-openrouter" data-backend="openrouter">
+      <label for="api-key">OpenRouter API key</label>
+      <input type="password" id="api-key" placeholder="sk-or-v1-..." autocomplete="off">
+      <p class="provider-blurb">
+        Don't have a key? <a href="https://openrouter.ai/workspaces/default/keys" target="_blank" rel="noopener">Get one at OpenRouter &rarr;</a>
+      </p>
+    </div>
+
+    <div class="cred-panel" role="tabpanel" id="panel-bedrock" aria-labelledby="tab-bedrock" data-backend="bedrock" hidden>
+      <label for="bedrock-region">AWS region</label>
+      <select id="bedrock-region"><option value="">Select a region</option></select>
+      <div class="auth-toggle">
+        <label><input type="radio" name="bedrock-auth" value="api_key" checked> Bedrock API key</label>
+        <label><input type="radio" name="bedrock-auth" value="access_keys"> Access keys</label>
+      </div>
+      <div class="auth-fields" data-auth-group="bedrock" data-auth="api_key">
+        <input type="password" id="bedrock-api-key" placeholder="ABSK... or bedrock-api-key-..." autocomplete="off" aria-label="Bedrock API key">
+      </div>
+      <div class="auth-fields" data-auth-group="bedrock" data-auth="access_keys" hidden>
+        <input type="password" id="bedrock-access-key-id" placeholder="Access key ID" autocomplete="off" aria-label="AWS access key ID">
+        <input type="password" id="bedrock-secret-access-key" placeholder="Secret access key" autocomplete="off" aria-label="AWS secret access key">
+        <input type="password" id="bedrock-session-token" placeholder="Session token (optional)" autocomplete="off" aria-label="AWS session token (optional)">
+      </div>
+    </div>
+
+    <div class="cred-panel" role="tabpanel" id="panel-vertex" aria-labelledby="tab-vertex" data-backend="vertex" hidden>
+      <label for="vertex-project">GCP project ID</label>
+      <input type="text" id="vertex-project" placeholder="my-project-123">
+      <label for="vertex-region">Region</label>
+      <select id="vertex-region"><option value="">Select a region</option></select>
+      <div class="auth-toggle">
+        <label><input type="radio" name="vertex-auth" value="access_token" checked> Access token</label>
+        <label><input type="radio" name="vertex-auth" value="service_account"> Service-account JSON</label>
+      </div>
+      <div class="auth-fields" data-auth-group="vertex" data-auth="access_token">
+        <input type="password" id="vertex-access-token" placeholder="ya29... (gcloud auth print-access-token)" autocomplete="off" aria-label="Vertex AI access token">
+      </div>
+      <div class="auth-fields" data-auth-group="vertex" data-auth="service_account" hidden>
+        <input type="file" id="vertex-sa-file" accept=".json,application/json" aria-label="Vertex AI service-account JSON file">
+        <span id="vertex-sa-status" class="status-text"></span>
+      </div>
+    </div>
+
+    <div class="cred-panel" role="tabpanel" id="panel-foundry" aria-labelledby="tab-foundry" data-backend="foundry" hidden>
+      <label for="foundry-resource">Azure AI Foundry resource name</label>
+      <input type="text" id="foundry-resource" placeholder="my-foundry-resource">
+      <label for="foundry-region">Region</label>
+      <select id="foundry-region"><option value="">Select a region</option></select>
+      <div class="auth-toggle">
+        <label><input type="radio" name="foundry-auth" value="api_key" checked> API key</label>
+        <label><input type="radio" name="foundry-auth" value="access_token"> Entra ID access token</label>
+      </div>
+      <div class="auth-fields" data-auth-group="foundry" data-auth="api_key">
+        <input type="password" id="foundry-api-key" placeholder="Foundry API key" autocomplete="off" aria-label="Microsoft Foundry API key">
+      </div>
+      <div class="auth-fields" data-auth-group="foundry" data-auth="access_token" hidden>
+        <input type="password" id="foundry-access-token" placeholder="Entra ID access token" autocomplete="off" aria-label="Microsoft Entra ID access token">
+      </div>
+      <p class="provider-blurb">
+        Get an Entra ID access token with <code>az account get-access-token --resource https://cognitiveservices.azure.com</code>.
+      </p>
+    </div>
+
+    <label for="judge-backend">Judge &amp; policy backend</label>
+    <select id="judge-backend">
+      <option value="openrouter">OpenRouter</option>
+      <option value="bedrock">Amazon Bedrock</option>
+      <option value="vertex">Google Vertex AI</option>
+      <option value="foundry">Microsoft Foundry</option>
+    </select>
   </section>
 
   <section id="catalog-section">
@@ -79,6 +164,24 @@
   </section>
 
   <section id="run-section">
+    <div class="run-options">
+      <label for="priority">What matters most?</label>
+      <select id="priority">
+        <option value="balanced" selected>Balanced</option>
+        <option value="quality">Best quality</option>
+        <option value="fastest">Fastest</option>
+        <option value="cheapest">Cheapest</option>
+      </select>
+      <label for="repeats">Repeat each prompt</label>
+      <select id="repeats" aria-describedby="repeats-hint">
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="3">3×</option>
+      </select>
+      <span id="repeats-hint" class="status-text">More accurate timing; multiplies model calls and cost.</span>
+    </div>
+    <p class="run-meta"><span id="selection-count">Selected 0 / 4</span> <span id="cost-estimate" class="status-text"></span></p>
+    <div id="region-warning-line" class="region-warning-line" hidden></div>
     <button id="run-button">Run comparison</button>
     <span id="run-status" class="status-text"></span>
   </section>
@@ -89,11 +192,34 @@
   </section>
 
   <section id="results-section" hidden>
+    <div id="cost-banner" class="card cost-banner status-text"></div>
+
     <h2>Overall verdict</h2>
     <div id="verdict-banner" class="card"></div>
 
+    <h2>Side-by-side</h2>
+    <p id="judge-line" class="status-text"></p>
+    <div id="compare-grid" class="compare-grid"></div>
+    <div id="advice-box" class="card advice-box" hidden></div>
+    <details class="card help-box">
+      <summary>How to read this</summary>
+      <ul>
+        <li><strong>Chat and interactive UIs</strong> — prioritize <em>Response time</em> (how long until the full answer arrives).</li>
+        <li><strong>Long outputs</strong> (reports, code) — prioritize <em>Speed</em> (tokens per second).</li>
+        <li><strong>Accuracy-critical work</strong> — choose <em>Best quality</em>.</li>
+        <li>If two models are within ~5 quality points, prefer the faster or cheaper one.</li>
+        <li>Run 3+ representative prompts before deciding — one prompt is noisy. Use "Repeat each prompt" for steadier timing.</li>
+        <li>Suggestions only name models from the <em>same provider</em> on the backend you used.</li>
+        <li>A judge can favor its own model family — for important decisions, re-run with a judge from a different provider.</li>
+        <li>"≈" speeds include hidden reasoning tokens on some providers and are approximate.</li>
+      </ul>
+    </details>
+
     <h2>Leaderboard</h2>
     <div id="leaderboard" class="card leaderboard"></div>
+
+    <h2>Latency comparison</h2>
+    <div id="latency-panel" class="card latency-panel"></div>
 
     <h2>Category Scores</h2>
     <div class="card chart-card">
@@ -110,8 +236,28 @@
   </section>
 
   <footer class="page-footer">
-    <a href="https://openrouter.ai/docs/guides/overview/report-feedback" target="_blank" rel="noopener">Report a problem</a>
+    <a href="https://github.com/thejaredchapman/evalforge-lite/issues/new?template=bug_report.md" target="_blank" rel="noopener">Report an issue</a>
+    <a href="https://github.com/thejaredchapman/evalforge-lite/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
+    <a href="https://openrouter.ai/docs/guides/overview/report-feedback" target="_blank" rel="noopener">Report an OpenRouter problem</a>
+    <a href="https://console.aws.amazon.com/support/home" target="_blank" rel="noopener">Report an AWS problem</a>
+    <a href="https://cloud.google.com/support-hub" target="_blank" rel="noopener">Report a Google Cloud problem</a>
+    <a href="https://azure.microsoft.com/en-us/support/create-ticket" target="_blank" rel="noopener">Report an Azure problem</a>
   </footer>
+
+  <dialog id="error-dialog" class="error-dialog" aria-labelledby="error-dialog-title" aria-describedby="error-dialog-summary">
+    <h2 id="error-dialog-title">Something went wrong</h2>
+    <p id="error-dialog-summary"></p>
+    <pre id="error-dialog-details" class="error-dialog-details" tabindex="0"></pre>
+    <p class="error-dialog-note">Credentials are redacted automatically, but review the details before sharing them publicly.</p>
+    <div class="error-dialog-actions">
+      <button type="button" id="error-dialog-copy" class="secondary">Copy details</button>
+      <a id="error-dialog-report" class="button-link secondary" target="_blank" rel="noopener">Report an issue on GitHub</a>
+      <a id="error-dialog-status-link" class="button-link secondary" target="_blank" rel="noopener" hidden></a>
+      <a id="error-dialog-provider-report-link" class="button-link secondary" target="_blank" rel="noopener" hidden></a>
+      <button type="button" id="error-dialog-close">Close</button>
+    </div>
+    <p id="error-dialog-status" class="error-dialog-status" role="status" aria-live="polite"></p>
+  </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
