@@ -3,7 +3,7 @@
 <!-- mcp-name: io.github.thejaredchapman/evalforge-lite -->
 
 Compare text LLMs across providers — OpenRouter, Amazon Bedrock, Google
-Vertex AI, and Microsoft Foundry — bring your own credentials. Available as
+Vertex AI, and Microsoft Foundry — bring your own credentials (or let the server hold them). Available as
 a web app and as an MCP server.
 
 ## Setup
@@ -134,7 +134,9 @@ from the lines you want and fill in your values, then load it and start:
     set -a; source .env; set +a
     python app.py
 
-(`.env` is already git-ignored. Never commit it.)
+(`.env` is already git-ignored. Never commit it.) In `.env`, keep the Vertex
+JSON on one line inside single quotes, like `.env.example` shows. (Or use the
+`export VERTEX_SERVICE_ACCOUNT_JSON="$(cat service-account.json)"` form below.)
 
 **Bedrock example:**
 
@@ -156,8 +158,8 @@ from the lines you want and fill in your values, then load it and start:
 **On a host such as Render:** open your service → **Environment** → **Add
 Environment Variable**, add the names and values from the table (for Vertex,
 paste the whole JSON as the value), then **redeploy**. **Docker:** use
-`-e NAME=value` or `--env-file`. Never put keys in `render.yaml`, the
-Dockerfile, or git.
+`-e NAME=value` or `--env-file`. Never put keys in `render.yaml`, any
+Dockerfile you write, or git.
 
 ### Step 3 — Check that it worked
 
@@ -167,7 +169,7 @@ this server** and show no input boxes.
 Or check from a terminal (this lists backend names and regions only — never
 keys):
 
-    curl -s http://localhost:8000/api/catalog | python -m json.tool | grep -A8 server_backends
+    curl -s http://localhost:8000/api/catalog | python3 -m json.tool | grep -A8 server_backends
 
 ### The daily limit
 
@@ -446,7 +448,9 @@ way (`gunicorn --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app`), or
 set `HOST=0.0.0.0` if invoking `python app.py` directly. Once deployed,
 the URL is reachable by anyone who has it; each visitor supplies their own
 credentials for whichever backend(s) they use (never yours), so you aren't
-billed for their model usage, but your hosting's bandwidth/CPU is shared
+billed for their model usage — unless you set server-side keys (see
+[Server-side keys](#server-side-keys-optional-for-operators)), in which case
+your key is used and billed, up to the daily limit. Either way, your hosting's bandwidth/CPU is shared
 across everyone who uses it.
 
 ## Test
@@ -536,7 +540,7 @@ field from before the 4-model comparison work, note:
   a live per-account listing. They can go stale as providers add or drop
   regions; verify on the provider's own page if a run fails with a
   region/availability error.
-- All state is in-memory only, capped at 5 runs per session — nothing is
+- All state is in-memory only, keeping the last 5 runs per session — nothing is
   persisted to disk.
 
 ## Contributing
