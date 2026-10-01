@@ -8,7 +8,7 @@
     "url": "https://github.com/thejaredchapman/evalforge-lite",
     "source": "github"
   },
-  "websiteUrl": "https://github.com/thejaredchapman/evalforge-lite#mcp-server",
+  "websiteUrl": "https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/mcp-server.md",
   "packages": [
     {
       "registryType": "pypi",

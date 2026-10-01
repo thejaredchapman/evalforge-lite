@@ -80,7 +80,7 @@ secret fields in `scrub.py`. Add mocked tests, and extend
 1. Fork the repo and create a branch from `main` (`fix/...`, `feat/...`, `docs/...`).
 2. Keep each PR focused on one change, and add or update tests with it.
 3. Run `pytest tests/ -v` locally.
-4. Update the README if you change behavior users will see.
+4. Update the README/docs if you change behavior users will see.
 5. Fill in the pull request template.
 
 ## License

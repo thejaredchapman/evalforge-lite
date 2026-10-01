@@ -12,26 +12,30 @@ If you only want to use EvalForge Lite from Claude, skip to the [MCP server](mcp
 ## Why this helps
 
 - **Nothing to configure first.** Apart from Python itself, the app needs no database, no account and no config file to start.
-- **Your keys stay yours.** The app reads no credentials from the server's environment unless the operator deliberately sets them. By default each key you paste is used for that request only.
+- **Your keys stay yours.** By default each key you paste is used for that request only. One catch: if your shell already exports variables such as `OPENROUTER_API_KEY`, the app treats them as server-held keys (see the note in step 5).
 - **One command to run.** The whole app is a single `python app.py`.
 
 ## What you need
 
-- **Python 3.10 or newer.** The project is developed and tested on Python 3.12. Check with `python3 --version`.
+- **Python 3.10 or newer.** The project is developed and tested on Python 3.12 (recommended). Check with `python3 --version`. If you need to install it, download it from [python.org](https://www.python.org/downloads/).
 - **Credentials for at least one backend.** The easiest is an OpenRouter API key. See [Backends and credentials](backends-and-credentials.md) for all four.
 - **A judge backend.** The judge (the model that scores answers) runs on one backend and needs credentials there. By default that is OpenRouter, so an OpenRouter key covers the whole first run.
 
 ## 1. Install
 
-Get the code and open a terminal in its folder, then create an isolated Python environment and install the requirements.
+Get the code, then create an isolated Python environment and install the requirements. You need [git](https://git-scm.com/downloads) for the first step (or use the **Code > Download ZIP** button on the GitHub page and open a terminal in the unzipped folder).
 
 ```bash
+git clone https://github.com/thejaredchapman/evalforge-lite.git
+cd evalforge-lite
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-On Windows, activate with `venv\Scripts\activate` instead of the `source` line. If `python3.12` is not found, use any `python3` that is 3.10 or newer.
+If `python3.12` is not found, use any `python3` that is 3.10 or newer.
+
+**On Windows**, create the environment with `py -3.12 -m venv venv` and activate it with `venv\Scripts\activate` instead of the `source` line. The `set -a; source .env; set +a` command in the next section works only in bash or zsh. On Windows, set variables with the Environment Variables dialog, with `set NAME=value` in Command Prompt, or with `$env:NAME="value"` in PowerShell, in the same window before you run `python app.py`.
 
 Expected result: `pip` finishes without errors and your prompt starts with `(venv)`.
 
@@ -82,6 +86,8 @@ Go to `http://localhost:8000` in your browser. You will see the title "EvalForge
 
 1. In the credentials panel, the **OpenRouter** tab is selected. Paste your key into **OpenRouter API key** (it looks like `sk-or-v1-...`). If you do not have one, the panel links to OpenRouter's key page.
 2. Leave **Judge & policy backend** on **OpenRouter** for now.
+
+**If the OpenRouter tab shows no input box** and says **Provided by this server. Nothing to enter here.**, your shell already exports `OPENROUTER_API_KEY` (or the same applies to another backend's variables), and the app is using it as a server-held key. That works, but runs then use that key. To enter your own instead, unset the variable and restart the app. See [The app is using a key I did not enter](troubleshooting-and-faq.md#the-app-is-using-a-key-i-did-not-enter).
 
 ## 6. Run your first comparison
 

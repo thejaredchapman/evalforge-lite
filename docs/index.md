@@ -21,7 +21,7 @@ It works with four providers ("backends"): OpenRouter, Amazon Bedrock, Google Ve
 - **Compare up to 4 models in one run, across 4 backends.** Each choice of model plus backend is called a *target*. `X` (via OpenRouter) and `X@bedrock` are two separate targets, so you can check the same model on two platforms in a single run.
 - **Automatic grading.** A *judge model* (a separate LLM that reads each answer) scores it against a *rubric* you write (the standard a good answer must meet), and local rule checks add a pass or fail on top. You get a score out of 100 and a letter grade without reading every answer yourself.
 - **A second opinion on every response.** Each successful answer also gets a per-response evaluation on six criteria, with strengths and weaknesses written out, so you can see why a model scored the way it did.
-- **Speed and cost next to quality.** The result shows response time, tokens per second and estimated cost for each target, and a "What matters most?" selector re-ranks the models without a new run.
+- **Speed and cost next to quality.** The result shows response time, tokens per second and estimated cost for each target, and a "What matters most?" selector moves the "Best for ..." badge to the best-fitting model without a new run.
 - **A policy gate.** Upload a company policy and any prompt that breaks it is blocked before a model is ever called. If the check itself fails, the prompt is blocked rather than let through.
 - **Shareable output.** Download a PDF report or a CSV for a spreadsheet.
 - **No account and no stored keys.** Your credentials travel with each request and are not kept after it. Nothing is written to disk.

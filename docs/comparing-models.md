@@ -11,9 +11,9 @@ This page explains how to read a result: what each number means, how the grade i
 
 - **One score you can sort by, and the parts behind it.** Quality is a single 0 to 100 number with a letter grade, but speed, response time and cost are shown separately so you can weigh them yourself.
 - **Relative scores, not guesses.** Response time, speed and cost are scored against the other models in the same run, so "fast" means "faster than the others you chose", not an absolute claim.
-- **Re-rank instantly.** The "What matters most?" selector re-weights the result in your browser with no new run and no extra cost.
+- **Re-weight instantly.** The "What matters most?" selector re-scores the result and moves the "Best for ..." badge in your browser with no new run and no extra cost.
 - **Reasons, not just numbers.** Every successful response carries written strengths, weaknesses and reasoning.
-- **You can see who judged.** The page names the judge model and warns when it comes from the same provider as one you are testing.
+- **You can see who judged.** The page names the judge model and, when it can recognise the judge's provider from its model id, warns if that provider is one you are testing.
 
 ## The four metrics
 
@@ -82,7 +82,7 @@ The **How to read this** box on the page offers rules of thumb: for chat, favour
 
 ## Overall verdict
 
-At the top of the results, **Overall verdict** gives the judge's pick of winner with a short rationale. It is a judge's summary of the aggregate numbers, not a separate test, so treat the leaderboard and your priority as the main guide. If the verdict reply cannot be understood the page shows "No verdict available."
+At the top of the results, **Overall verdict** gives the judge's pick of winner with a short rationale. The judge sees only each target's score and letter grade, so it ignores speed, cost and your priority selection. It is a summary of those aggregate grades, not a separate test, so treat the leaderboard and your priority as the main guide. If the verdict reply cannot be understood the page shows "No verdict available."
 
 ## Per-response evaluation
 
@@ -95,7 +95,7 @@ Every successful response gets one combined judge call that scores it from 1 to 
 - **Helpfulness**
 - **Safety**
 
-Alongside the scores it writes **Strengths**, **Weaknesses**, a short reasoning paragraph and an **Overall** score out of 5. The evaluation is collapsible under each response (**Evaluation**). The column header shows each model's average as **Overall eval x/5**.
+Alongside the scores it writes **Strengths**, **Weaknesses**, a short reasoning paragraph and an **Overall** score out of 5. The evaluation is collapsible under each response (**Evaluation**). The column shows each model's average of the judge's **Overall** score as **Overall eval x/5**. That is a different number from the Quality blend, which uses the mean of the six criteria scores rather than the Overall field.
 
 Evaluation runs once per cell (a prompt and model pair), not once per repeat. If a response's evaluation fails or cannot be read, that card says "Evaluation unavailable." and that response is simply left out of the evaluation half of Quality. It never fails the run. Blocked and errored cells have no evaluation.
 
@@ -105,7 +105,7 @@ The judge is told to treat the response as data and to ignore any instructions w
 
 ## Latency comparison
 
-Each column shows how its average response time compares with the fastest target, for example "1.8x slower than fastest (2,340 ms)", or "Fastest". The **Latency comparison** panel under the leaderboard shows, for each prompt, a bar per model with the fastest highlighted, and finally "Averages across all prompts".
+Each column shows how its average response time compares with the fastest target, for example "1.8x slower than fastest (2340 ms)", or "Fastest". The **Latency comparison** panel under the leaderboard shows, for each prompt, a bar per model with the fastest highlighted, and finally "Averages across all prompts".
 
 **Why it helps:** a plain multiple ("1.8x slower") is easier to reason about than a score.
 
@@ -136,7 +136,9 @@ Click **Try it** to swap the suggestion into your selection. If the model it rep
 
 ## Judge disclosure and bias note
 
-The line **Judged by <model> via <backend>** tells you which model scored the run. If that judge belongs to the same provider as a model you compared, a note appears, in this form: "The judge (...) is from the same family as ... — scores may lean in its favor." A judge can favour its own family's writing style, so for an important decision, run again with a judge from a different provider (use **Judge & policy backend**).
+The line **Judged by `[model]` via `[backend]`** tells you which model scored the run. If the app can tell from the judge's model id that it belongs to the same provider as a model you compared, a note appears, in this form: "The judge (...) is from the same family as ... — scores may lean in its favor." A judge can favour its own family's writing style, so for an important decision, run again with a judge from a different provider (use **Judge & policy backend**).
+
+The note is a best-effort warning, not a guarantee. The app finds the judge's provider by looking for a provider name in the judge's model id. The default Foundry judge, `gpt-4o-mini`, has no such name in it, so judging OpenAI models with it shows no warning even though it is an OpenAI model. A custom judge model set through a `*_JUDGE_MODEL` variable behaves the same way if its id has no provider name in it. Check which judge ran and where its model comes from rather than relying on the absence of a note.
 
 **Why it helps:** you know when a score deserves a second look.
 
@@ -148,7 +150,7 @@ The line **Judged by <model> via <backend>** tells you which model scored the ru
 
 ## Best model per prompt
 
-Each prompt also records which model handled that specific prompt best, with a reason. It uses the judge score if a rubric was used, then rule-check pass rate, and as a last resort just the fastest response (the reason then says so and suggests adding a rubric or checks). It reuses data already collected, with no extra model call. It appears in the CSV as `best_model_for_prompt`.
+Each prompt also records which model handled that specific prompt best, with a reason. It uses the judge score if a rubric was used, then rule-check pass rate, and as a last resort just the fastest response (the reason then says so and suggests adding a rubric or checks). It reuses data already collected, with no extra model call. It is shown on the page as **Recommended: ...** above that prompt's responses, and in the CSV as `best_model_for_prompt`.
 
 ## Limits of these numbers
 

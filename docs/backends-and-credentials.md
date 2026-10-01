@@ -68,7 +68,7 @@ The footer of the app links to each provider's own support page, and **Provider 
 
 ## Format checks
 
-Before a run, EvalForge Lite checks the shape of what you entered and rejects obviously wrong values with a message, before the run counts against your limit. For example, a region that does not look like a region for that provider, a project or resource name in an invalid format, or a key containing spaces or control characters (often a stray newline from copy and paste). These checks also protect the server from being pointed at arbitrary addresses.
+Before a run, EvalForge Lite checks the shape of what you entered and rejects obviously wrong values with a message, before the run counts against your limit. For example, a region that does not look like a region for that provider, a project or resource name in an invalid format, or a key with leading or trailing whitespace or control characters in it (often a stray space or newline from copy and paste). These checks also protect the server from being pointed at arbitrary addresses.
 
 ## Judge backend
 
@@ -91,7 +91,7 @@ A *target* is a model plus the backend it runs on. In the page you tick a checkb
 - `anthropic/claude-sonnet-4.5@bedrock` is the same model through Bedrock.
 - The same pattern works for `@vertex` and `@foundry`.
 
-Each target counts toward the 4-model cap, so `X` and `X@bedrock` use two. Only the combinations in the catalog are offered. A model with no route for a backend has no checkbox for it, and asking for it anyway (through the API or MCP) returns the error "... is not available on ...".
+Each target counts toward the 4-model cap, so `X` and `X@bedrock` use two. Only the combinations in the catalog are offered. A model with no route for a backend has no checkbox for it, and asking for it anyway (through the API or MCP) is not rejected up front: the call for that target fails during the run with the error "... is not available on ...", so the run still counts against your limit.
 
 **Why it helps:** the same model can behave and cost differently on different platforms, and this puts both in one table.
 

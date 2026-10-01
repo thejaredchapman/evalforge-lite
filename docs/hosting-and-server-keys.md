@@ -12,7 +12,7 @@ This page is for people who run EvalForge Lite for other people, such as a team 
 ## Why this helps
 
 - **Users never see your key.** A server-held key lives in an environment variable, is never sent to the browser, and is removed from error messages. Users just see **Provided by this server** where the key box would be.
-- **One shared budget with a cap.** Every run that uses a server-held key counts against a shared limit, 50 per rolling 24 hours by default, so a busy day cannot run up an unlimited bill.
+- **One shared budget with a cap.** Every run that uses a server-held key counts against a shared limit, 50 per rolling 24 hours by default, The cap counts runs and prompt evaluations that use your key. It does not cap tokens, or the number of test cases in a run, so also set a spending limit on the provider key itself.
 - **Mix and match.** You can hold a key for one backend and leave the others for users to fill in.
 - **Reversible in one step.** Remove the variables and restart, and users go back to entering their own keys.
 - **Nothing to run besides the app.** No database, no queue and no other service.
@@ -159,7 +159,7 @@ The MCP server reads the same variables from the environment it is started in. W
 
 - **The tab still shows input boxes.** A required variable is missing or empty (check the table), the app was not restarted, or, for Vertex, the JSON is not valid. Partly configured backends are ignored on purpose.
 - **"Shared usage limit has been reached".** Wait for the rolling 24 hours to pass, or raise `SERVER_KEY_DAILY_CAP`.
-- **The app uses a key you did not set up.** If you already export `OPENROUTER_API_KEY` (or the AWS or other variables above) in your shell for other tools, this app picks it up and uses it as a server key. Unset it first if you did not mean that.
+- **The app uses a key you did not set up.** If you already export `OPENROUTER_API_KEY` in your shell for other tools, this app picks it up and uses it as a server key. The same goes for the other variables in the table: for Bedrock, the AWS variables count only when `BEDROCK_REGION` is also set, so exporting `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` alone does not turn it on. Unset it first if you did not mean that.
 - **Bedrock still asks for a region.** `BEDROCK_REGION` must be set along with a key.
 
 More messages are covered in [Troubleshooting and FAQ](troubleshooting-and-faq.md).

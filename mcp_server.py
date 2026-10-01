@@ -83,7 +83,7 @@ def evaluate_prompt(prompt: str, api_key: str = "", creds: dict | None = None,
     "bedrock"?: {...}, "vertex"?: {...}, "foundry"?: {...}} to use Amazon Bedrock,
     Google Vertex AI, or Microsoft Foundry; a bare `api_key` is treated as an
     OpenRouter key. `judge_backend` picks which backend runs the evaluation.
-    If the operator has set server-side keys for a backend (see README "Server-side keys"), those are used for it automatically and creds for it are not needed.
+    If the operator has set server-side keys for a backend (see https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/hosting-and-server-keys.md), those are used for it automatically and creds for it are not needed.
     """
     raw_creds, held = gateway.merge_server_creds(gateway.normalize_creds(creds, api_key))
     if raw_creds is None:
@@ -119,7 +119,7 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
     provider and backend only), advice, ranking, and best_for_priority, plus a per-run
     `cost` total and, per cell, an `evaluation` (answered/quality/instruction_following/
     completeness/helpfulness/safety scores, strengths, weaknesses, reasoning, overall).
-    If the operator has set server-side keys for a backend (see README "Server-side keys"), those are used for it automatically and creds for it are not needed.
+    If the operator has set server-side keys for a backend (see https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/hosting-and-server-keys.md), those are used for it automatically and creds for it are not needed.
     """
     if not isinstance(models, list) or any(not isinstance(m, str) or not m.strip() for m in models):
         return {"error": "Model ids must be non-empty strings."}

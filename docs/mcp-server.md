@@ -19,7 +19,7 @@ The server runs on your own machine and talks to the assistant over standard inp
 
 ## Install
 
-You need [`uv`](https://docs.astral.sh/uv/) for the first three options.
+You need [`uv`](https://docs.astral.sh/uv/) for every option except [From a checkout](#from-a-checkout).
 
 ### Run it directly
 
@@ -58,6 +58,8 @@ Add this to the client's MCP configuration (for Claude Desktop, its `claude_desk
   }
 }
 ```
+
+Claude Desktop is a graphical app and on macOS it may not find `uvx` on its PATH. If the server fails to start, replace `"command": "uvx"` with the absolute path printed by `which uvx` in a terminal.
 
 ### Latest code from GitHub
 
@@ -123,7 +125,7 @@ Rule checks look like this, and are run locally against each response with no ex
 ]
 ```
 
-`max_length` is a number of characters. See [Comparing models](comparing-models.md) for how check results feed the grade.
+`max_length` is a number of characters, and `contains` is case-sensitive. A malformed check (an unknown `type`, a missing `value`, or an invalid regular expression) is not caught per check: it makes the whole `run_comparison` call return `{"error": ...}`, and that happens after the run was already counted against your limit, so double-check them before calling. See [Comparing models](comparing-models.md) for how check results feed the grade.
 
 The result includes everything a web run does, such as `grades`, `stats`, `results` and `verdict`, plus:
 
@@ -176,7 +178,7 @@ The judge backend's credentials are always required, unless the operator keeps t
 - **Prompt-evaluation limit:** `evaluate_prompt` has its own 3 per 8 hours.
 - **Models:** at most 4 per run.
 - **State is per process.** The policy, the last 5 runs and both limits live in the memory of the running server. Restarting it (or your client restarting it) clears them. Nothing is written to disk.
-- **Policy:** `set_policy` takes plain text only; there is no file upload in the MCP server.
+- **Policy:** `set_policy` takes plain text only; there is no file upload in the MCP server. The only way to clear a policy is `set_policy` with an empty string (`""`), which turns gating off.
 
 See [Privacy and limits](privacy-and-limits.md) for all limits in one place.
 

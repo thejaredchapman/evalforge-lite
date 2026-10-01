@@ -17,7 +17,7 @@ This page walks through the web app in the order you meet things on screen, from
 
 ## The header
 
-At the top you will find the page title and, below it, two links: **Where models run** (the [availability page](#where-models-run)) and a **Provider status** menu with links to the live status pages for OpenRouter, AWS, Google Cloud and Azure. On a narrow screen a menu button lists the sections: Credentials, Models, Policy, Test Cases, Run, Results.
+At the top you will find the page title and, below it, two links: **Where models run** (the [availability page](#where-models-run)) and a **Provider status** menu with links to the live status pages for OpenRouter, AWS, Google Cloud and Azure. On a narrow screen a menu button lists the sections: Credentials, Models, Policy, Test Cases, Run, Results and **Where models run**.
 
 ## 1. Credentials panel
 
@@ -75,7 +75,7 @@ The tags are a curated starting point, and the page says so: "Tags curated as of
 
 You can select at most 4 targets. At the limit, the remaining checkboxes are disabled with the hint **You can compare up to 4 models — deselect one first.** The server enforces the same cap, independent of the page. Selecting `X` and `X@bedrock` uses two of the four.
 
-**Why it helps:** four columns stay readable side by side, and a run's cost and time stay bounded.
+**Why it helps:** four columns stay readable side by side, and the number of model calls per prompt has a ceiling.
 
 ### Custom model ID
 
@@ -87,7 +87,7 @@ If a model is not in the catalog, type its OpenRouter id (format `provider/model
 
 Under **Company policy (optional)**, choose a `.txt`, `.md` or `.pdf` file. The status reads **Policy loaded.** when it is accepted.
 
-Once a policy is loaded, before any prompt is sent to a model, the judge model checks the prompt against the policy. If the prompt violates it, that prompt is **blocked** for every model and nothing is sent to them. The blocked cell shows the policy clause and reason. Text is pulled from a PDF with a PDF reader, and any other file type is read as UTF-8 text.
+Once a policy is loaded, each model's copy of a prompt is checked separately, before it is sent: one judge call per prompt per model. If the judge flags it, that prompt is **blocked** for that model and never sent to it. Because the judge is a model and can answer differently from call to call, a borderline prompt can be blocked for one model and allowed for another. The blocked cell shows the policy clause and reason. Text is pulled from a PDF with a PDF reader, and any other file type is read as UTF-8 text.
 
 The gate **fails closed**: if the check errors, the judge is unreachable, or the reply cannot be understood, the prompt is treated as a violation and blocked with the reason "Could not verify policy compliance."
 
@@ -134,7 +134,7 @@ Click **Run comparison**. Before sending anything, the page checks that you pick
 
 While it works the status shows **Running...**. If you have used your 3 runs in the 8-hour window, you see a message with the time you can try again.
 
-Failures of individual model calls do not stop the run. A pop-up titled with the failing model lists the errors, with credentials redacted, buttons to **Copy details** and **Report an issue on GitHub**, and, for the backend that failed, links to check its status or report a problem to it.
+Failures of individual model calls do not stop the run. When the run finishes, a pop-up titled "A model call failed" (or "N model calls failed" when several did) lists the errors, with credentials redacted, and has buttons to **Copy details** and **Report an issue on GitHub**. When all the failures are on one backend, it also links to that backend's status page and to reporting a problem to it. A failed cell in the results shows `ERROR` and a **Details** button; clicking it opens the same kind of pop-up titled `[model] failed` (with the model's name) for that one cell.
 
 ## 7. Results
 
@@ -142,11 +142,12 @@ After the run, the results section shows, from top to bottom:
 
 1. **Cost banner:** the total estimated cost of the run, split between models and judge calls.
 2. **Overall verdict:** the winning model and the judge's rationale.
-3. **Side-by-side:** one column per target with a letter grade, four bars, raw numbers, "Overall eval x/5", a latency comparison against the fastest target, and a suggested alternative with a **Try it** button. A line **Judged by ... via ...** says which model did the judging. An advice box adds the judge's plain-English trade-off explanation and, where it applies, a bias warning.
+3. **Side-by-side:** one column per target with a letter grade, four bars, raw numbers, "Overall eval x/5" (the average of the judge's own overall score for each response, not the same thing as the Quality bar), a latency comparison against the fastest target, and a suggested alternative with a **Try it** button. A line **Judged by ... via ...** says which model did the judging. An advice box adds the judge's plain-English trade-off explanation and, where it applies, a bias warning.
 4. **How to read this:** a collapsible tip list.
-5. **Leaderboard** and **Category Scores:** a chart of per-category scores.
+5. **Leaderboard:** a ranked list with each target's grade, score, cost, latency, category chips and a one-sentence summary.
 6. **Latency comparison:** a bar per model for each prompt, plus averages.
-7. **Results:** each prompt with every model's actual response, rule-check results, judge score and a collapsible **Evaluation**.
+7. **Category Scores:** a chart of per-category scores.
+8. **Results:** each prompt with a **Recommended:** line naming the best model for that prompt, every model's actual response, its latency compared with the fastest, and a collapsible **Evaluation**. Per-cell judge scores and rule-check results are not shown on the page: judge scores are in the CSV and the PDF report, and rule-check pass counts are in the CSV.
 
 All of this is explained in [Comparing models](comparing-models.md).
 

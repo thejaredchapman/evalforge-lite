@@ -18,7 +18,7 @@ on the server for you.
 - **Up to 4 models per run, across 4 backends.** `X` (OpenRouter) and `X@bedrock` are separate targets, so you can check one model on two platforms in a single run.
 - **Automatic grading.** A judge model scores each answer against your rubric, and rule checks (`contains`, `regex`, `json_valid`, `max_length`, available through the API and MCP) add a pass or fail. You get a 0-100 score and a letter grade.
 - **A second opinion on every response.** Each answer is also evaluated on six criteria (answered, quality, instruction following, completeness, helpfulness, safety) with strengths and weaknesses written out.
-- **Speed and cost beside quality.** Latency, tokens per second and estimated cost for every model, and a "What matters most?" selector that re-ranks without a new run.
+- **Speed and cost beside quality.** Latency, tokens per second and estimated cost for every model, and a "What matters most?" selector that moves the "Best for ..." badge without a new run.
 - **Policy gate.** Upload a company policy and prompts that violate it are blocked before any model is called. If the check itself fails, the prompt is blocked.
 - **Reports.** Download a PDF or a CSV for any of your last five runs.
 - **No accounts, no database.** Credentials are used for one request and not stored. Nothing is written to disk.
@@ -27,8 +27,11 @@ on the server for you.
 
 ### 1. Run the web app on your computer
 
-Requires Python 3.10 or newer (tested on 3.12).
+Requires Python 3.10 or newer (3.12 recommended; download from
+https://www.python.org/downloads/) and git.
 
+    git clone https://github.com/thejaredchapman/evalforge-lite.git
+    cd evalforge-lite
     python3.12 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
@@ -38,7 +41,7 @@ Open http://localhost:8000, paste a key for at least one backend (an OpenRouter
 API key is the quickest: https://openrouter.ai/workspaces/default/keys), add a
 test case, pick two to four models, and click **Run comparison**. Runs are
 limited to 3 per 8 hours per browser session.
-Full walkthrough: [Getting started](docs/getting-started.md).
+Full walkthrough: [Getting started](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/getting-started.md).
 
 ### 2. Use it from Claude (MCP server)
 
@@ -58,7 +61,7 @@ Or install the Claude Code plugin, which bundles the same server:
 Then ask your assistant to compare models. It gets 9 tools: `list_models`,
 `suggest_models`, `list_availability`, `set_policy`, `evaluate_prompt`,
 `run_comparison`, `list_runs`, `get_report`, `get_report_csv`.
-Details, Claude Desktop config and credential shapes: [MCP server](docs/mcp-server.md).
+Details, Claude Desktop config and credential shapes: [MCP server](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/mcp-server.md).
 
 ### 3. Host it for other people
 
@@ -67,14 +70,14 @@ can run `gunicorn --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app`. By
 default every visitor supplies their own key. Optionally keep provider keys on
 the server with environment variables and a shared daily cap (50 per 24 hours by
 default). Keep it at one worker: all state is in memory per process.
-Full guide: [Hosting and server-side keys](docs/hosting-and-server-keys.md).
+Full guide: [Hosting and server-side keys](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/hosting-and-server-keys.md).
 
 ## Good to know
 
 - The app does not read `.env` by itself. To use values from it, run `set -a; source .env; set +a` before `python app.py`.
 - Each run is limited to 4 models, and each browser session gets 3 runs per 8 hours.
-- All state lives in memory and is cleared when the server restarts. See [Privacy and limits](docs/privacy-and-limits.md).
-- Upgrading from an older version and reading the CSV or API fields? See the notes in [Troubleshooting and FAQ](docs/troubleshooting-and-faq.md#changes-to-exports-and-api-fields).
+- All state lives in memory and is cleared when the server restarts. See [Privacy and limits](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/privacy-and-limits.md).
+- Upgrading from an older version and reading the CSV or API fields? See the notes in [Troubleshooting and FAQ](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/troubleshooting-and-faq.md#changes-to-exports-and-api-fields).
 
 ## Backends and credentials
 
@@ -87,21 +90,21 @@ Full guide: [Hosting and server-side keys](docs/hosting-and-server-keys.md).
 
 A separate **judge backend** setting chooses where the judge and policy gate
 run. Bedrock, Vertex and Foundry costs are estimates from catalog prices, not
-your cloud bill. See [Backends and credentials](docs/backends-and-credentials.md).
+your cloud bill. See [Backends and credentials](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/backends-and-credentials.md).
 
 ## Documentation
 
 | Page | What is in it |
 |---|---|
-| [Overview](docs/index.md) | What it is, who it is for, the three ways to use it |
-| [Getting started](docs/getting-started.md) | Install, run, and your first comparison |
-| [Web app guide](docs/web-app.md) | Every part of the screen, in order |
-| [Comparing models](docs/comparing-models.md) | Reading metrics, grades, evaluation, cost and their limits |
-| [Backends and credentials](docs/backends-and-credentials.md) | Keys, regions, `X@backend` targets |
-| [MCP server](docs/mcp-server.md) | Install paths, all 9 tools, example prompts |
-| [Hosting and server-side keys](docs/hosting-and-server-keys.md) | Deploying for others, operator-held keys, daily cap |
-| [Troubleshooting and FAQ](docs/troubleshooting-and-faq.md) | Common messages, fixes, and notes on CSV/API field changes |
-| [Privacy and limits](docs/privacy-and-limits.md) | What data goes where, what is stored, every limit |
+| [Overview](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/index.md) | What it is, who it is for, the three ways to use it |
+| [Getting started](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/getting-started.md) | Install, run, and your first comparison |
+| [Web app guide](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/web-app.md) | Every part of the screen, in order |
+| [Comparing models](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/comparing-models.md) | Reading metrics, grades, evaluation, cost and their limits |
+| [Backends and credentials](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/backends-and-credentials.md) | Keys, regions, `X@backend` targets |
+| [MCP server](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/mcp-server.md) | Install paths, all 9 tools, example prompts |
+| [Hosting and server-side keys](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/hosting-and-server-keys.md) | Deploying for others, operator-held keys, daily cap |
+| [Troubleshooting and FAQ](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/troubleshooting-and-faq.md) | Common messages, fixes, and notes on CSV/API field changes |
+| [Privacy and limits](https://github.com/thejaredchapman/evalforge-lite/blob/main/docs/privacy-and-limits.md) | What data goes where, what is stored, every limit |
 
 ## Test
 
@@ -113,10 +116,10 @@ network calls.
 ## Contributing
 
 Contributions are welcome: bug reports, model-catalog updates, new checks, docs,
-and new backends. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests and the
+and new backends. See [CONTRIBUTING.md](https://github.com/thejaredchapman/evalforge-lite/blob/main/CONTRIBUTING.md) for setup, tests and the
 pull request process. When the app shows an error, the popup's **Report an issue
 on GitHub** button opens a pre-filled bug report.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/thejaredchapman/evalforge-lite/blob/main/LICENSE)

@@ -27,7 +27,7 @@ A run allows at most 4 targets. Remember that `X` and `X@bedrock` count as two. 
 
 You selected a model on a backend whose credentials are empty, or the judge backend has no credentials. Open that backend's tab in the credentials panel and fill it in. See [Backends and credentials](backends-and-credentials.md). If a tab says **Provided by this server**, nothing is needed for that backend.
 
-### "<Backend> credentials are required for the judge backend."
+### "`[Backend]` credentials are required for the judge backend."
 
 The judge (which scores answers, writes the verdict and checks your policy) always runs on the **judge backend** you chose, and that backend's credentials must be present even if none of your models use it. Either fill them in or change the judge backend to one you have credentials for.
 
@@ -41,7 +41,7 @@ A key was pasted with a stray space or line break. Re-copy it without surroundin
 
 ## Rate limits
 
-### "Rate limit reached. Try again after <time>."
+### "Rate limit reached. Try again after `[time]`."
 
 Each browser session gets **3 runs per rolling 8 hours**. The message shows when the oldest of those runs ages out. The prompt-evaluation button has its own separate allowance of 3 per 8 hours, and the MCP server has its own counters too.
 
@@ -53,15 +53,15 @@ This appears only when the operator keeps a provider key on the server. All user
 
 ## During a run
 
-### A pop-up titled "<model> failed" or "The comparison run failed"
+### A pop-up titled "A model call failed" or "N model calls failed"
 
-One or more model calls returned an error. The pop-up shows the provider's error text (with your credentials redacted), plus buttons to **Copy details** and **Report an issue on GitHub**, and links to check that backend's status page or report a problem to it. Other models in the same run are not affected; the failed cell shows `ERROR` and counts as no successful response.
+One or more model calls returned an error. The pop-up shows the provider's error text (with your credentials redacted), plus buttons to **Copy details** and **Report an issue on GitHub**. When all the failures are on one backend it also has links to check that backend's status page or report a problem to it. You can reopen the details for one failed cell with its **Details** button, which opens a pop-up titled `[model] failed`. Other models in the same run are not affected; the failed cell shows `ERROR` and counts as no successful response.
 
 Common causes:
 
 - **Wrong or expired key or token.** Re-enter it. Short-lived tokens (Vertex access tokens, Foundry Entra tokens) expire quickly.
 - **No access to the model.** Your account or key may lack access to that model. The provider's message usually says so.
-- **"<model> is not available on <backend>."** The catalog has no route for that model on that backend. Pick a different target.
+- **"`[model]` is not available on `[backend]`."** The catalog has no route for that model on that backend. Pick a different target.
 - **Timeouts.** Each model call times out after 60 seconds.
 - **A provider outage.** Use the **Check status** link in the pop-up or the header's **Provider status** menu.
 
@@ -71,7 +71,7 @@ The model is not listed for the region you chose on that backend. It is advice o
 
 ### A cell says it was blocked by policy
 
-You loaded a company policy and the judge decided the prompt violates it, so no model saw it. The cell shows the clause and the reason. If the reason is **"Could not verify policy compliance."**, the check itself failed (judge unreachable, bad credentials for the judge backend, or an unreadable reply). The gate fails closed, so the prompt is blocked rather than let through. Fix the judge backend credentials and run again, or remove the policy. See [Web app guide](web-app.md#3-company-policy-optional).
+You loaded a company policy and the judge decided the prompt violates it for that model, so that model never received it. Each model's copy of a prompt is checked separately, so the same prompt can be blocked for one model and sent to another. The cell shows the clause and the reason. If the reason is **"Could not verify policy compliance."**, the check itself failed (judge unreachable, bad credentials for the judge backend, or an unreadable reply). The gate fails closed, so the prompt is blocked rather than let through. Fix the judge backend credentials and run again, or remove the policy. See [Web app guide](web-app.md#3-company-policy-optional).
 
 Also check that the policy file was read correctly: `.pdf` files go through a PDF reader, and everything else must be valid UTF-8 text. A scanned PDF with no selectable text yields an empty policy, and with an empty policy no prompt is gated, so use a PDF with real text.
 
@@ -126,7 +126,7 @@ Check that `uv` is installed and `uvx evalforge-lite` runs without errors in a t
 
 ### The app is using a key I did not enter
 
-If your shell already exports `OPENROUTER_API_KEY`, the AWS variables or the others listed in [Hosting and server-side keys](hosting-and-server-keys.md), the app treats them as operator-held server keys. Unset them in that shell, or start the app from a clean environment.
+If your shell already exports `OPENROUTER_API_KEY`, or the other variables listed in [Hosting and server-side keys](hosting-and-server-keys.md), the app treats them as operator-held server keys. (The AWS access-key variables count only together with `BEDROCK_REGION`.) Unset them in that shell, or start the app from a clean environment.
 
 ## FAQ
 
@@ -155,7 +155,7 @@ Yes. `X` and `X@bedrock` are separate targets, and both count toward the limit o
 No. They are a dated starting point for choosing models, not measurements.
 
 **Where do I report a bug?**
-Use the **Report an issue on GitHub** button in an error pop-up, which pre-fills the details, or see [CONTRIBUTING.md](../CONTRIBUTING.md). Remove any credentials before posting anything.
+Use the **Report an issue on GitHub** button in an error pop-up, which pre-fills the details, or see [CONTRIBUTING.md](https://github.com/thejaredchapman/evalforge-lite/blob/main/CONTRIBUTING.md). Remove any credentials before posting anything.
 
 ## Changes to exports and API fields
 

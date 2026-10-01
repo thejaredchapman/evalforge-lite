@@ -11,4 +11,4 @@ Closes #
 
 ## Checklist
 - [ ] No API keys, credentials, or `.env` files are included
-- [ ] README updated if user-visible behavior changed
+- [ ] README/docs updated if user-visible behavior changed
