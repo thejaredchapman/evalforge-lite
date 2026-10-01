@@ -67,6 +67,7 @@ def api_catalog():
         "priority_weights": grading.PRIORITY_WEIGHTS,
         "priority_labels": grading.PRIORITY_LABELS,
         "regions": catalog.load_regions(),
+        "tags": catalog.load_tags(),
         "provider_links": gateway.PROVIDER_LINKS,
     })
 

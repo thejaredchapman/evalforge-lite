@@ -26,6 +26,10 @@ def load_regions():
     return config.load_regions()
 
 
+def load_tags():
+    return config.load_tags()
+
+
 def fetch_openrouter_models():
     """Fetch OpenRouter's full public model list (no API key required to list models).
 
@@ -111,6 +115,15 @@ def find_model(catalog_dict, model_id):
             if model["id"] == model_id:
                 return provider_id, model
     return None, None
+
+
+def models_for_tag(catalog_dict, tag_id):
+    return [
+        model["id"]
+        for provider in catalog_dict.values()
+        for model in provider["models"]
+        if tag_id in (model.get("tags") or [])
+    ]
 
 
 def region_availability(catalog_dict, model_id, backend, region):

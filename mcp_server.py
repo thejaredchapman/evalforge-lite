@@ -29,9 +29,14 @@ _run_history = deque(maxlen=5)
 
 @mcp.tool()
 def list_models() -> dict:
-    """List every provider and model in the catalog, plus each provider's frontier (flagship) model."""
+    """List every provider and model in the catalog, plus each provider's frontier (flagship) model.
+
+    Each model carries a `reasoning` flag (supports extended reasoning) and a `tags` list of
+    curated need/industry tag ids; `tags` in the result gives their labels, one-line "why"
+    explanations and the date they were verified. Tags are a starting point, not benchmarks.
+    """
     cat = catalog.load_catalog()
-    return {"providers": cat, "frontier": catalog.frontier_models(cat)}
+    return {"providers": cat, "frontier": catalog.frontier_models(cat), "tags": catalog.load_tags()}
 
 
 @mcp.tool()

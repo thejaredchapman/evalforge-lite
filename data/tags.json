@@ -1,0 +1,19 @@
+{
+  "verified": "2026-10-01",
+  "disclaimer": "Tags are a curated starting point, not benchmarks. Models change often — verify fit for your own use case before relying on them.",
+  "tags": [
+    {"id": "coding", "label": "Coding", "kind": "need", "why": "Strong at writing, explaining and fixing code."},
+    {"id": "reasoning", "label": "Reasoning & maths", "kind": "need", "why": "Handles multi-step logic, maths and planning problems well."},
+    {"id": "long-context", "label": "Long documents", "kind": "need", "why": "Large context window; can read long reports, contracts or codebases in one go."},
+    {"id": "fast-cheap", "label": "Fast & cheap", "kind": "need", "why": "Low latency and low price per token; good for high-volume or simple tasks."},
+    {"id": "creative", "label": "Creative writing", "kind": "need", "why": "Fluent, natural prose for drafting, marketing copy and storytelling."},
+    {"id": "multilingual", "label": "Multilingual", "kind": "need", "why": "Solid quality across many languages, not just English."},
+    {"id": "agents", "label": "Agents & tool use", "kind": "need", "why": "Reliable at calling tools/functions and following multi-step plans."},
+    {"id": "healthcare", "label": "Healthcare", "kind": "industry", "why": "Careful, well-hedged answers suited to clinical summaries and patient-facing drafts (always with human review)."},
+    {"id": "legal", "label": "Legal", "kind": "industry", "why": "Precise reading of long, dense text such as contracts and policies."},
+    {"id": "finance", "label": "Finance", "kind": "industry", "why": "Accurate with numbers, tables and structured reasoning over reports."},
+    {"id": "customer-support", "label": "Customer support", "kind": "industry", "why": "Fast, friendly, consistent replies at a low cost per conversation."},
+    {"id": "education", "label": "Education", "kind": "industry", "why": "Clear step-by-step explanations at an adjustable level."},
+    {"id": "research", "label": "Research", "kind": "industry", "why": "Synthesizes long sources and reasons carefully about evidence."}
+  ]
+}

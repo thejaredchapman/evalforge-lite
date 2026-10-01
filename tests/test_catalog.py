@@ -285,3 +285,54 @@ def test_price_for_native_id_returns_none_when_not_found():
 def test_price_for_native_id_returns_none_for_unknown_backend():
     cat = catalog.load_catalog()
     assert catalog.price_for_native_id(cat, "openrouter", "openai/gpt-5") is None
+
+
+import re
+
+NEED_IDS = {"coding", "reasoning", "long-context", "fast-cheap", "creative", "multilingual", "agents"}
+INDUSTRY_IDS = {"healthcare", "legal", "finance", "customer-support", "education", "research"}
+
+
+def test_load_tags_matches_config():
+    assert catalog.load_tags() == config.load_tags()
+
+
+def test_tags_file_has_expected_shape():
+    data = catalog.load_tags()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", data["verified"])
+    assert data["disclaimer"]
+    for tag in data["tags"]:
+        assert tag["id"] and tag["label"]
+        assert tag["kind"] in {"need", "industry"}
+        assert 0 < len(tag["why"]) <= 140
+
+
+def test_tags_file_has_exactly_the_expected_ids():
+    tags = catalog.load_tags()["tags"]
+    assert {t["id"] for t in tags if t["kind"] == "need"} == NEED_IDS
+    assert {t["id"] for t in tags if t["kind"] == "industry"} == INDUSTRY_IDS
+    assert len(tags) == len({t["id"] for t in tags})
+
+
+def test_every_curated_model_has_one_to_six_known_tags():
+    known = {t["id"] for t in catalog.load_tags()["tags"]}
+    for provider in catalog.load_catalog().values():
+        for model in provider["models"]:
+            tags = model.get("tags")
+            assert tags and 1 <= len(tags) <= 6, model["id"]
+            assert len(tags) == len(set(tags)), model["id"]
+            assert set(tags) <= known, model["id"]
+
+
+def test_every_tag_is_used_by_at_least_one_model():
+    cat = catalog.load_catalog()
+    for tag in catalog.load_tags()["tags"]:
+        assert catalog.models_for_tag(cat, tag["id"]), tag["id"]
+
+
+def test_models_for_tag_returns_ids_carrying_the_tag():
+    cat = catalog.load_catalog()
+    ids = catalog.models_for_tag(cat, "fast-cheap")
+    assert "anthropic/claude-haiku-4.5" in ids
+    assert "anthropic/claude-opus-4.5" not in ids
+    assert catalog.models_for_tag(cat, "no-such-tag") == []

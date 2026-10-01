@@ -416,3 +416,9 @@ def test_run_comparison_evaluation_gateway_error_never_leaks_secret():
     }
     runs = mcp_server.list_runs()
     assert secret not in json.dumps(runs)
+
+
+def test_list_models_includes_tags():
+    result = mcp_server.list_models()
+    assert result["tags"]["verified"]
+    assert any(t["id"] == "coding" for t in result["tags"]["tags"])
