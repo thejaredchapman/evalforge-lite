@@ -5,6 +5,7 @@ import bedrock
 import catalog
 import foundry
 import openrouter
+import server_creds
 import vertex
 from errors import GatewayError
 
@@ -168,6 +169,30 @@ def normalize_creds(creds=None, api_key=None):
     return None
 
 
+def merge_server_creds(user_creds):
+    """Overlay operator-held credentials (server_creds) on a request's creds. Server wins.
+
+    Returns (merged, held_backends). With nothing held, returns (user_creds, []) unchanged.
+    """
+    held = server_creds.load()
+    if not held:
+        return user_creds, []
+    merged = dict(user_creds) if isinstance(user_creds, dict) else {}
+    merged.update(held)
+    return merged, [backend for backend in BACKENDS if backend in held]
+
+
+def backends_used(targets, judge_backend):
+    """The set of backends a call needs: the judge backend plus every valid target's backend."""
+    needed = {judge_backend}
+    for target in targets:
+        try:
+            needed.add(parse_target(target)[1])
+        except GatewayError:
+            continue
+    return needed
+
+
 def check_run_creds(raw_creds, targets, judge_backend):
     """Up-front check before a rate-limited call: returns (prepared_creds, error_message_or_None).
 
@@ -177,12 +202,7 @@ def check_run_creds(raw_creds, targets, judge_backend):
     if not raw_creds.get(judge_backend):
         return None, f"{BACKEND_LABELS[judge_backend]} credentials are required for the judge backend."
     prepared = prepare_creds(raw_creds)
-    needed = {judge_backend}
-    for target in targets:
-        try:
-            needed.add(parse_target(target)[1])
-        except GatewayError:
-            continue
+    needed = backends_used(targets, judge_backend)
     errors = [
         prepared[backend]["error"]
         for backend in BACKENDS

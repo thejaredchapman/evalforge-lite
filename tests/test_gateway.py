@@ -467,3 +467,30 @@ def test_call_backend_does_not_mutate_backend_clients_result_dict():
     assert original["cost_usd"] == 0.0
     # 10 input tokens * $0.3/M + 20 output tokens * $2.5/M
     assert result["cost_usd"] == pytest.approx(0.000053)
+
+
+def test_merge_server_creds_no_server_keys_returns_input_unchanged():
+    user = {"openrouter": "sk-or-v1-user"}
+    merged, held = gateway.merge_server_creds(user)
+    assert merged is user and held == []
+    assert gateway.merge_server_creds(None) == (None, [])
+
+
+def test_merge_server_creds_server_wins_and_keeps_other_backends(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-server")
+    user = {"openrouter": "sk-or-v1-user", "bedrock": {"region": "us-east-1", "api_key": "ABSKuser"}}
+    merged, held = gateway.merge_server_creds(user)
+    assert merged["openrouter"] == "sk-or-v1-server"
+    assert merged["bedrock"] == {"region": "us-east-1", "api_key": "ABSKuser"}
+    assert held == ["openrouter"]
+    assert user["openrouter"] == "sk-or-v1-user"  # input not mutated
+
+
+def test_merge_server_creds_with_no_user_creds_returns_only_server_ones(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-server")
+    assert gateway.merge_server_creds(None) == ({"openrouter": "sk-or-v1-server"}, ["openrouter"])
+
+
+def test_backends_used_collects_judge_and_target_backends():
+    used = gateway.backends_used(["openai/gpt-5", "openai/gpt-5@foundry", "bad@@"], "bedrock")
+    assert {"bedrock", "openrouter", "foundry"} <= used
