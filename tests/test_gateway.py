@@ -453,3 +453,17 @@ def test_call_backend_unpriced_native_id_is_zero_cost(mock_call):
 def test_call_backend_openrouter_keeps_reported_cost_without_catalog_lookup(mock_call):
     result = gateway.call_backend("openrouter", "openai/gpt-5", MESSAGES, {"openrouter": "sk-or-v1-test"})
     assert result["cost_usd"] == 0.0042
+
+
+def test_call_backend_does_not_mutate_backend_clients_result_dict():
+    original = {"text": "ok", "latency_ms": 5, "cost_usd": 0.0, "tokens": 30,
+                "input_tokens": 10, "output_tokens": 20}
+    with patch("gateway.vertex.call_model", return_value=original):
+        result = gateway.call_backend(
+            "vertex", "google/gemini-2.5-flash", MESSAGES,
+            {"vertex": {"project": "my-project-123", "region": "us-central1", "access_token": "ya29.x"}},
+        )
+    assert result is not original
+    assert original["cost_usd"] == 0.0
+    # 10 input tokens * $0.3/M + 20 output tokens * $2.5/M
+    assert result["cost_usd"] == pytest.approx(0.000053)

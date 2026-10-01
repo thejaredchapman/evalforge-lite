@@ -218,6 +218,7 @@ def call_backend(backend, native_model_id, messages, creds, timeout=60):
     # call_target, which already prices by catalog model id) would otherwise always show
     # $0 for these backends. Price by the native id actually sent, "{geo}" template included.
     price = catalog.price_for_native_id(catalog.load_catalog(), backend, native_model_id)
+    result = dict(result)
     result["cost_usd"] = estimate_cost(price, result.get("input_tokens", 0), result.get("output_tokens", 0))
     return result
 
