@@ -1,8 +1,22 @@
 from unittest.mock import patch
 
+import pytest
+
+import costs
 import gateway
+import judge
 import openrouter
 import runner
+
+
+@pytest.fixture(autouse=True)
+def _default_evaluation(monkeypatch):
+    """Every successful cell now calls judge.evaluate_response unconditionally. Default
+    it to a cheap, deterministic stub so tests that don't care about evaluation never
+    reach the network; tests that assert on cell["evaluation"] override this with @patch.
+    """
+    monkeypatch.setattr(judge, "evaluate_response",
+                        lambda *a, **k: {"available": False, "reason": "Evaluation unavailable."})
 
 
 def _fake_call_target(target, messages, creds, timeout=60):
@@ -199,3 +213,65 @@ def test_repeats_all_failing_is_a_cell_error(mock_call):
                       repeats=2)[0]["cells"]["openai/gpt-5"]
     assert cell["error"] == "down"
     assert mock_call.call_count == 2
+
+
+@patch("runner.judge.evaluate_response", return_value={"available": True, "overall": 4})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_successful_cell_gets_evaluation(mock_call, mock_eval):
+    results = runner.run([{"prompt": "q1"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})
+    cell = results[0]["cells"]["openai/gpt-5"]
+    assert cell["evaluation"] == {"available": True, "overall": 4}
+    assert mock_eval.call_count == 1
+
+
+@patch("runner.policy.check_policy", return_value={"violates": True, "clause": "c", "reason": "r"})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_blocked_cell_has_no_evaluation_key(mock_call, mock_policy):
+    results = runner.run([{"prompt": "q1"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+                         policy_text="policy")
+    cell = results[0]["cells"]["openai/gpt-5"]
+    assert "evaluation" not in cell
+    mock_call.assert_not_called()
+
+
+@patch("runner.gateway.call_target", side_effect=gateway.GatewayError("down"))
+def test_error_cell_has_no_evaluation_key(mock_call):
+    results = runner.run([{"prompt": "q1"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"})
+    cell = results[0]["cells"]["openai/gpt-5"]
+    assert "evaluation" not in cell
+
+
+@patch("runner.judge.evaluate_response", return_value={"available": False, "reason": "Evaluation unavailable."})
+@patch("runner.gateway.call_target")
+def test_repeats_evaluate_once(mock_call, mock_eval):
+    mock_call.side_effect = [_timed_response(1000, 100), _timed_response(2000, 100), _timed_response(3000, 150)]
+    runner.run([{"prompt": "q"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"}, repeats=3)
+    assert mock_eval.call_count == 1
+
+
+@patch("runner.judge.evaluate_response", return_value={"available": False, "reason": "Evaluation unavailable."})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_evaluate_response_receives_prompt_response_rubric_and_backend(mock_call, mock_eval):
+    runner.run([{"prompt": "q1", "rubric": "be nice"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+               judge_backend="vertex")
+    args, kwargs = mock_eval.call_args
+    assert args[0] == "q1"
+    assert args[1] == "response from openai/gpt-5"
+    assert args[2] == "be nice"
+    assert kwargs["backend"] == "vertex"
+
+
+@patch("runner.judge.evaluate_response", return_value={"available": False, "reason": "Evaluation unavailable."})
+@patch("runner.judge.llm_judge", return_value={"score": 4, "rationale": "ok"})
+@patch("runner.policy.check_policy", return_value={"violates": False, "clause": "", "reason": ""})
+@patch("runner.gateway.call_target", side_effect=_fake_call_target)
+def test_meter_is_threaded_to_policy_judge_and_evaluation(mock_call, mock_policy, mock_judge, mock_eval):
+    meter = costs.CostMeter()
+
+    runner.run([{"prompt": "q", "rubric": "r"}], ["openai/gpt-5"], creds={"openrouter": "sk-or-v1-test"},
+               policy_text="some policy", meter=meter)
+
+    assert mock_policy.call_args[1]["meter"] is meter
+    assert mock_judge.call_args[1]["meter"] is meter
+    assert mock_eval.call_args[1]["meter"] is meter
+    assert meter.totals()["model_usd"] == pytest.approx(0.001)
