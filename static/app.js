@@ -1,5 +1,6 @@
 const state = {
   catalog: null,
+  serverBackends: {},  // {backend: {region?}} the operator holds credentials for
   allModels: [],  // OpenRouter's full live catalog, used for autocomplete and the
                   // "+N more" expansion under each curated provider section
   testCases: [],
@@ -166,6 +167,33 @@ function judgeBackend() {
   return document.getElementById("judge-backend").value;
 }
 
+function isServerHeld(backend) {
+  return Object.prototype.hasOwnProperty.call(state.serverBackends, backend);
+}
+
+// Backends whose credentials the operator keeps on the server: show a note instead of inputs.
+function applyServerBackends() {
+  Object.entries(state.serverBackends).forEach(([backend, info]) => {
+    const panel = document.getElementById(`panel-${backend}`);
+    const tab = document.getElementById(`tab-${backend}`);
+    if (!panel || !tab || panel.dataset.serverHeld) return;
+    panel.dataset.serverHeld = "true";
+    Array.from(panel.children).forEach((child) => {
+      child.hidden = true;
+    });
+    const note = document.createElement("p");
+    note.className = "server-note";
+    note.textContent = info && info.region
+      ? `Provided by this server (region: ${info.region}). Nothing to enter here.`
+      : "Provided by this server. Nothing to enter here.";
+    panel.appendChild(note);
+    const mark = document.createElement("span");
+    mark.className = "server-mark";
+    mark.textContent = " · server";
+    tab.appendChild(mark);
+  });
+}
+
 function buildCreds() {
   const creds = {};
   const orKey = fieldValue("api-key");
@@ -211,6 +239,9 @@ function buildCreds() {
       if (accessToken) creds.foundry = { resource: foundryResource, region: foundryRegion, access_token: accessToken };
     }
   }
+  Object.keys(state.serverBackends).forEach((backend) => {
+    delete creds[backend]; // the server uses its own key; never send one
+  });
   return creds;
 }
 
@@ -223,7 +254,7 @@ function targetBackend(target) {
 function missingBackends(creds) {
   const needed = new Set(Array.from(state.selectedModels).map(targetBackend));
   needed.add(judgeBackend());
-  return Array.from(needed).filter((backend) => !creds[backend]);
+  return Array.from(needed).filter((backend) => !creds[backend] && !isServerHeld(backend));
 }
 
 function populateRegionSelect(selectId, regions) {
@@ -244,6 +275,7 @@ function populateRegionSelect(selectId, regions) {
 }
 
 function selectedRegion(backend) {
+  if (isServerHeld(backend) && state.serverBackends[backend].region) return state.serverBackends[backend].region;
   const el = document.getElementById(`${backend}-region`);
   return el ? el.value : "";
 }
@@ -403,6 +435,8 @@ async function loadCatalogAndModels() {
 
   const [catalogData, modelsData] = await Promise.all([catalogPromise, modelsPromise]);
   state.catalog = catalogData;
+  state.serverBackends = catalogData.server_backends || {};
+  applyServerBackends();
   state.allModels = modelsData.models || [];
 
   renderFrontier(catalogData.frontier);
@@ -664,7 +698,7 @@ async function evaluatePrompt(idx) {
   const prompt = state.testCases[idx].prompt.trim();
 
   const creds = buildCreds();
-  if (!creds[judgeBackend()]) {
+  if (!creds[judgeBackend()] && !isServerHeld(judgeBackend())) {
     feedbackEl.textContent = `Add ${BACKEND_LABELS[judgeBackend()]} credentials first (the judge runs there).`;
     return;
   }
@@ -761,7 +795,7 @@ async function runComparison() {
   if (resp.status === 429) {
     const data = await resp.json();
     const resetDate = new Date(data.reset_at * 1000);
-    runStatus.textContent = `Rate limit reached. Try again after ${resetDate.toLocaleTimeString()}.`;
+    runStatus.textContent = data.message || `Rate limit reached. Try again after ${resetDate.toLocaleTimeString()}.`;
     return;
   }
 

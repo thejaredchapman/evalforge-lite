@@ -518,3 +518,6 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
 #availability-table th, #availability-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 #availability-table th { cursor: pointer; color: var(--muted); user-select: none; white-space: nowrap; }
 #availability-table th:hover { color: var(--fg); }
+
+.server-note { color: var(--muted); font-size: 12px; margin: 4px 0; }
+.server-mark { font-size: 10px; color: var(--muted); }
