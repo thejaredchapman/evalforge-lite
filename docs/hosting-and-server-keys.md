@@ -12,7 +12,7 @@ This page is for people who run EvalForge Lite for other people, such as a team 
 ## Why this helps
 
 - **Users never see your key.** A server-held key lives in an environment variable, is never sent to the browser, and is removed from error messages. Users just see **Provided by this server** where the key box would be.
-- **One shared budget with a cap.** Every run that uses a server-held key counts against a shared limit, 50 per rolling 24 hours by default, The cap counts runs and prompt evaluations that use your key. It does not cap tokens, or the number of test cases in a run, so also set a spending limit on the provider key itself.
+- **One shared budget with a cap.** Every run that uses a server-held key counts against a shared limit, 50 per rolling 24 hours by default. The cap counts runs and prompt evaluations that use your key. It does not cap tokens, or the number of test cases in a run, so also set a spending limit on the provider key itself.
 - **Mix and match.** You can hold a key for one backend and leave the others for users to fill in.
 - **Reversible in one step.** Remove the variables and restart, and users go back to entering their own keys.
 - **Nothing to run besides the app.** No database, no queue and no other service.
