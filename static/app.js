@@ -150,7 +150,6 @@ function atCap() {
 }
 
 function syncSelectionVisuals() {
-  if (!state.catalog) return;
   const cap = PickerCore.capState(state.selectedModels.size, maxModels());
   document.querySelectorAll("[data-target]").forEach((el) => {
     const selected = state.selectedModels.has(el.dataset.target);
@@ -162,7 +161,7 @@ function syncSelectionVisuals() {
       el.classList.toggle("selected", selected);
     }
   });
-  document.querySelectorAll(".provider-dropdown").forEach((details) => {
+  if (state.catalog) document.querySelectorAll(".provider-dropdown").forEach((details) => {
     const provider = state.catalog.providers[details.dataset.provider];
     const ids = new Set(provider.models.map((m) => m.id));
     let n = 0;
@@ -172,7 +171,8 @@ function syncSelectionVisuals() {
     });
     details.querySelector(".provider-selected").textContent = n ? `${n} selected` : "";
   });
-  syncSelectionVisuals();
+  updateSelectionMeta();
+  syncRegionWarnings();
 }
 
 function fieldValue(id) {
