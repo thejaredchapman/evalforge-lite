@@ -78,7 +78,8 @@ def check_and_record_server_key(now) -> dict      # {"allowed": bool, "reset_at"
 
 - One rolling window shared by all users, lock-guarded like the existing limiter. Process-local, the same accepted limitation as the per-session limiter.
 - It is consulted **only** when `used_server_backends` is non-empty, in `/api/run`, `/api/evaluate-prompt`, and the two MCP tools, **after** the per-session check passes (so a session-limited request doesn't burn the global budget).
-- A refused request returns a 429 in the same shape as today's rate-limit response, with the exact message "The server's shared usage limit has been reached. Please try again later." (No "use your own key" hint: the user cannot override a server-held backend.) Tests assert this exact wording.
+- A refused request returns a 429 with today's rate-limit shape, `{"error": "rate_limited", "reset_at": <ts or null>}`, plus a `"message"` field with the exact text "The server's shared usage limit has been reached. Please try again later." (No "use your own key" hint: the user cannot override a server-held backend.) The frontend shows `message` when present, else the existing "Rate limit reached…" text. Tests assert this exact wording.
+- The cap is consulted only when a server-held backend is actually **needed** by the call (the judge backend or one of the target backends), not merely held.
 - Each `/api/run`, `/api/evaluate-prompt` call counts as 1.
 
 ## 5. Documentation and convention
