@@ -1127,7 +1127,7 @@ function renderLatencyPanel(data) {
       line.className = "latency-bar-row" + (i === 0 ? " fastest" : "");
       const label = document.createElement("span");
       label.className = "latency-bar-label";
-      label.textContent = entry.model_id;
+      label.textContent = i === 0 ? `${entry.model_id} (fastest)` : entry.model_id;
       const bar = document.createElement("div");
       bar.className = "latency-bar";
       bar.setAttribute("role", "img");
@@ -1157,10 +1157,11 @@ function renderLatencyPanel(data) {
     statsBlock.appendChild(title);
     avgEntries
       .sort((a, b) => (a[1].avg_latency_ms || 0) - (b[1].avg_latency_ms || 0))
-      .forEach(([modelId, s]) => {
+      .forEach(([modelId, s], i) => {
         const p = document.createElement("p");
         p.className = "latency-average-line";
-        p.textContent = `${modelId}: ${Math.round(s.avg_latency_ms || 0).toLocaleString()} ms avg`;
+        const fastestSuffix = i === 0 ? " (fastest)" : "";
+        p.textContent = `${modelId}: ${Math.round(s.avg_latency_ms || 0).toLocaleString()} ms avg${fastestSuffix}`;
         statsBlock.appendChild(p);
       });
     panel.appendChild(statsBlock);
@@ -1184,7 +1185,7 @@ function renderCostBanner(data) {
   const estimateNote = hasEstimatedBackend ? " Estimates for Bedrock/Vertex/Foundry are from catalog prices." : "";
   const callWord = cost.judge_calls === 1 ? "call" : "calls";
   banner.textContent =
-    `This run cost ~$${cost.total_usd.toFixed(4)} — models $${cost.model_usd.toFixed(4)} + ` +
+    `This run cost ≈ $${cost.total_usd.toFixed(4)} — models $${cost.model_usd.toFixed(4)} + ` +
     `judge $${cost.judge_usd.toFixed(4)} (${cost.judge_calls} judge ${callWord}).${estimateNote}`;
 }
 
