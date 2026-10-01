@@ -340,3 +340,37 @@ def test_run_comparison_returns_ranking_for_priority(mock_run, mock_build):
     assert result["ranking"] == ["a/y", "a/x"]
     assert result["best_for_priority"] == "a/y"
     assert mock_run.call_args[1]["repeats"] == 2
+
+
+@patch("mcp_server.availability.snapshot")
+def test_list_availability_returns_snapshot(mock_snapshot):
+    mock_snapshot.return_value = {"generated_at": 1, "openrouter": {}, "backends": {}}
+    assert mcp_server.list_availability() == {"generated_at": 1, "openrouter": {}, "backends": {}}
+
+
+@patch("mcp_server.runner.run")
+@patch("mcp_server.judge.overall_verdict")
+def test_run_comparison_accepts_foundry_target_and_judge_backend(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    creds = {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}}
+
+    result = mcp_server.run_comparison(
+        test_cases=[{"prompt": "q1"}], models=["openai/gpt-5@foundry"], creds=creds, judge_backend="foundry",
+    )
+
+    assert "error" not in result
+    _, run_kwargs = mock_run.call_args
+    assert run_kwargs["creds"] == creds
+    assert run_kwargs["judge_backend"] == "foundry"
+
+
+def test_run_comparison_scrubs_foundry_api_key_on_error():
+    secret = "fake-foundry-secret-key-1234567890"
+    with patch("mcp_server.runner.run", side_effect=Exception(f"request failed using {secret}")):
+        result = mcp_server.run_comparison(
+            test_cases=[{"prompt": "q1"}], models=["openai/gpt-5@foundry"],
+            creds={"foundry": {"resource": "my-resource", "region": "eastus", "api_key": secret}},
+            judge_backend="foundry",
+        )
+    assert secret not in result["error"]

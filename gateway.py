@@ -11,6 +11,16 @@ from errors import GatewayError
 BACKENDS = ("openrouter", "bedrock", "vertex", "foundry")
 BACKEND_LABELS = {"openrouter": "OpenRouter", "bedrock": "Bedrock", "vertex": "Vertex AI",
                    "foundry": "Microsoft Foundry"}
+PROVIDER_LINKS = {
+    "openrouter": {"status": "https://status.openrouter.ai",
+                   "report": "https://openrouter.ai/docs/guides/overview/report-feedback"},
+    "bedrock": {"status": "https://health.aws.amazon.com/health/status",
+                "report": "https://console.aws.amazon.com/support/home"},
+    "vertex": {"status": "https://status.cloud.google.com",
+               "report": "https://cloud.google.com/support-hub"},
+    "foundry": {"status": "https://azure.status.microsoft/en-us/status",
+                "report": "https://azure.microsoft.com/en-us/support/create-ticket"},
+}
 
 _BEDROCK_REGION_RE = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d$")
 _VERTEX_REGION_RE = re.compile(r"^(global|[a-z]+-[a-z]+\d+)$")

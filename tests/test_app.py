@@ -482,3 +482,49 @@ def test_api_catalog_exposes_cap_and_priority_weights():
 
 def test_api_report_rejects_invalid_priority():
     assert _client().get("/api/report?priority=vibes").status_code == 400
+
+
+@patch("app.availability.snapshot")
+def test_api_availability_returns_snapshot(mock_snapshot):
+    mock_snapshot.return_value = {"generated_at": 123, "openrouter": {}, "backends": {}}
+    resp = _client().get("/api/availability")
+    assert resp.get_json() == {"generated_at": 123, "openrouter": {}, "backends": {}}
+
+
+def test_api_catalog_exposes_regions_and_provider_links():
+    body = _client().get("/api/catalog").get_json()
+    assert set(body["regions"]) == {"bedrock", "vertex", "foundry"}
+    assert set(body["provider_links"]) == {"openrouter", "bedrock", "vertex", "foundry"}
+    assert body["provider_links"]["foundry"]["status"] == "https://azure.status.microsoft/en-us/status"
+
+
+@patch("app.runner.run")
+@patch("app.judge.overall_verdict")
+def test_api_run_accepts_foundry_target_and_judge_backend(mock_verdict, mock_run):
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    creds = {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}}
+
+    resp = _client().post("/api/run", json={
+        "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5@foundry"],
+        "creds": creds, "judge_backend": "foundry",
+    })
+
+    assert resp.status_code == 200
+    _, run_kwargs = mock_run.call_args
+    assert run_kwargs["creds"] == creds
+    assert run_kwargs["judge_backend"] == "foundry"
+
+
+def test_api_run_error_response_scrubs_foundry_api_key(caplog):
+    secret = "fake-foundry-secret-key-1234567890"
+    with patch("app.runner.run", side_effect=Exception(f"request failed using {secret}")):
+        resp = _client().post("/api/run", json={
+            "test_cases": [{"prompt": "q1"}], "models": ["openai/gpt-5@foundry"],
+            "creds": {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": secret}},
+            "judge_backend": "foundry",
+        })
+    assert resp.status_code == 503
+    body = resp.get_json()
+    assert secret not in body["error"]
+    assert secret not in caplog.text

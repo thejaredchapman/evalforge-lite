@@ -9,6 +9,7 @@ from collections import deque
 from flask import Flask, jsonify, render_template, request, send_file
 
 import analysis
+import availability
 import catalog
 import config
 import gateway
@@ -59,6 +60,8 @@ def api_catalog():
         "max_models": config.MAX_MODELS,
         "priority_weights": grading.PRIORITY_WEIGHTS,
         "priority_labels": grading.PRIORITY_LABELS,
+        "regions": catalog.load_regions(),
+        "provider_links": gateway.PROVIDER_LINKS,
     })
 
 
@@ -72,6 +75,11 @@ def api_suggest():
 @app.route("/api/openrouter-models")
 def api_openrouter_models():
     return jsonify({"models": catalog.fetch_openrouter_models()})
+
+
+@app.route("/api/availability")
+def api_availability():
+    return jsonify(availability.snapshot())
 
 
 @app.route("/api/evaluate-prompt", methods=["POST"])

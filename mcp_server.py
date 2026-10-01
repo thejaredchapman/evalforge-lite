@@ -6,6 +6,7 @@ from collections import deque
 from mcp.server.mcpserver import MCPServer
 
 import analysis
+import availability
 import catalog
 import config
 import gateway
@@ -40,6 +41,14 @@ def suggest_models(model_id: str) -> dict:
 
 
 @mcp.tool()
+def list_availability() -> dict:
+    """Return the current model-availability snapshot: live OpenRouter listing status
+    (refreshed at most every 6 hours) plus curated Bedrock/Vertex/Foundry region coverage.
+    """
+    return availability.snapshot()
+
+
+@mcp.tool()
 def set_policy(policy_text: str) -> dict:
     """Set the company policy text used to gate prompts before any model is called."""
     global _policy_text
@@ -55,9 +64,9 @@ def evaluate_prompt(prompt: str, api_key: str = "", creds: dict | None = None,
     An explicit, separately-triggered LLM call (uses your credentials) — not run
     automatically as part of run_comparison. Rate-limited independently from
     run_comparison's 3-per-8h budget. Pass `creds` as {"openrouter"?: str,
-    "bedrock"?: {...}, "vertex"?: {...}} to use Amazon Bedrock or Google Vertex AI;
-    a bare `api_key` is treated as an OpenRouter key. `judge_backend` picks which
-    backend runs the evaluation.
+    "bedrock"?: {...}, "vertex"?: {...}, "foundry"?: {...}} to use Amazon Bedrock,
+    Google Vertex AI, or Microsoft Foundry; a bare `api_key` is treated as an
+    OpenRouter key. `judge_backend` picks which backend runs the evaluation.
     """
     raw_creds = gateway.normalize_creds(creds, api_key)
     if raw_creds is None:
@@ -81,8 +90,9 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
     Each test case may include an optional "rubric" (scored by an LLM judge) and/or
     "checks" (rule-based checks). Returns per-model grades, cost/latency stats, and an
     overall verdict. Rate-limited to 3 calls per 8 hours.
-    Models are "<catalog id>" (OpenRouter) or "<catalog id>@bedrock" / "<catalog id>@vertex";
-    pass matching creds ({"openrouter"?, "bedrock"?, "vertex"?}) or a bare OpenRouter api_key.
+    Models are "<catalog id>" (OpenRouter) or "<catalog id>@bedrock" / "<catalog id>@vertex" /
+    "<catalog id>@foundry"; pass matching creds ({"openrouter"?, "bedrock"?, "vertex"?, "foundry"?})
+    or a bare OpenRouter api_key.
     judge_backend picks which backend runs the judge and policy gate.
     At most 4 models. priority (balanced|quality|fastest|cheapest) ranks the results;
     repeats (1-3) re-sends each prompt for timing accuracy. Returns suggestions (same
