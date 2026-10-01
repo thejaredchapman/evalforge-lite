@@ -598,3 +598,11 @@ def test_api_catalog_includes_tags_and_model_tags():
     assert {t["id"] for t in data["tags"]["tags"]} >= {"coding", "healthcare"}
     gpt5 = next(m for m in data["providers"]["openai"]["models"] if m["id"] == "openai/gpt-5")
     assert gpt5["tags"] and gpt5["reasoning"] is True
+
+
+def test_index_renders_picker_containers():
+    html = _client().get("/").get_data(as_text=True)
+    assert 'id="tag-filters"' in html
+    assert 'id="selection-counter"' in html
+    assert 'id="provider-list"' in html
+    assert "picker-core.js" in html

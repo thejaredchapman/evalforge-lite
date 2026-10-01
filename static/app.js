@@ -4,6 +4,7 @@ const state = {
                   // "+N more" expansion under each curated provider section
   testCases: [],
   selectedModels: new Set(),
+  activeTags: new Set(),  // picker filter chips; filtering never alters selectedModels
   vertexServiceAccount: null,   // service-account JSON text; lives only in this tab's memory
   customModels: [],
   runs: [],       // full /api/run responses seen this page load, oldest first
@@ -149,9 +150,29 @@ function atCap() {
 }
 
 function syncSelectionVisuals() {
-  document.querySelectorAll(".model-badge[data-target], .backend-chip[data-target]").forEach((el) => {
-    el.classList.toggle("selected", state.selectedModels.has(el.dataset.target));
+  if (!state.catalog) return;
+  const cap = PickerCore.capState(state.selectedModels.size, maxModels());
+  document.querySelectorAll("[data-target]").forEach((el) => {
+    const selected = state.selectedModels.has(el.dataset.target);
+    if (el.type === "checkbox") {
+      el.checked = selected;
+      el.disabled = cap.atCap && !selected;
+      el.title = el.disabled ? capMessage() : "";
+    } else {
+      el.classList.toggle("selected", selected);
+    }
   });
+  document.querySelectorAll(".provider-dropdown").forEach((details) => {
+    const provider = state.catalog.providers[details.dataset.provider];
+    const ids = new Set(provider.models.map((m) => m.id));
+    let n = 0;
+    state.selectedModels.forEach((target) => {
+      const { modelId } = splitTarget(target);
+      if (ids.has(modelId) || modelId.startsWith(`${details.dataset.provider}/`)) n += 1;
+    });
+    details.querySelector(".provider-selected").textContent = n ? `${n} selected` : "";
+  });
+  syncSelectionVisuals();
 }
 
 function fieldValue(id) {
@@ -272,21 +293,22 @@ function syncRegionWarnings() {
   const warnings = regionWarnings();
   const warningByTarget = new Map(warnings.map((w) => [w.target, w]));
 
-  document.querySelectorAll(".backend-chip[data-target]").forEach((chip) => {
-    const target = chip.dataset.target;
+  document.querySelectorAll(".backend-check[data-target]").forEach((checkbox) => {
+    const target = checkbox.dataset.target;
+    const label = checkbox.closest("label");
     const warning = warningByTarget.get(target);
-    let markEl = chip.querySelector(".region-warning-mark");
+    let markEl = label.querySelector(".region-warning-mark");
     if (warning) {
       if (!markEl) {
         markEl = document.createElement("span");
         markEl.className = "region-warning-mark";
         markEl.textContent = "⚠";
-        chip.appendChild(markEl);
+        label.appendChild(markEl);
       }
-      chip.title = warningText(warning);
-    } else if (markEl) {
-      markEl.remove();
-      chip.title = `Also run via ${BACKEND_LABELS[targetBackend(target)]}`;
+      label.title = warningText(warning);
+    } else {
+      if (markEl) markEl.remove();
+      label.title = `Run via ${BACKEND_LABELS[targetBackend(target)]}`;
     }
   });
 
@@ -406,15 +428,16 @@ async function loadCatalogAndModels() {
   state.allModels = modelsData.models || [];
 
   renderFrontier(catalogData.frontier);
+  renderTagFilters();
   renderProviders(catalogData.providers);
+  applyFilters();
   populateModelsDatalist(state.allModels);
   if (catalogData.regions) {
     populateRegionSelect("bedrock-region", catalogData.regions.bedrock.regions);
     populateRegionSelect("vertex-region", catalogData.regions.vertex.regions);
     populateRegionSelect("foundry-region", catalogData.regions.foundry.regions);
   }
-  updateSelectionMeta();
-  syncRegionWarnings();
+  syncSelectionVisuals();
 }
 
 function populateModelsDatalist(models) {
@@ -428,54 +451,18 @@ function populateModelsDatalist(models) {
   });
 }
 
+const BACKEND_SHORT = { openrouter: "OpenRouter", bedrock: "Bedrock", vertex: "Vertex", foundry: "Foundry" };
+
+function tagLabel(tagId) {
+  const tag = state.catalog.tags.tags.find((t) => t.id === tagId);
+  return tag ? tag.label : tagId;
+}
+
 function renderFrontier(frontier) {
   const container = document.getElementById("frontier-list");
   container.innerHTML = "";
   frontier.forEach((model) => {
-    const color = state.catalog.providers[model.provider].color;
-    container.appendChild(modelBadge(model, color));
-  });
-}
-
-function renderProviders(providers) {
-  const container = document.getElementById("provider-list");
-  container.innerHTML = "";
-  Object.entries(providers).forEach(([providerId, provider]) => {
-    const block = document.createElement("div");
-    block.className = "provider-block";
-    block.innerHTML = `<h3 style="color:${provider.color}">${providerId}</h3><p class="provider-blurb">${provider.blurb}</p>`;
-    const grid = document.createElement("div");
-    grid.className = "model-grid";
-    provider.models.forEach((model) => grid.appendChild(modelBadge(model, provider.color)));
-    block.appendChild(grid);
-
-    const curatedIds = new Set(provider.models.map((m) => m.id));
-    const moreModels = state.allModels
-      .filter((m) => m.id.startsWith(`${providerId}/`) && !curatedIds.has(m.id) && !m.id.includes(":batch"))
-      .sort((a, b) => (b.created || 0) - (a.created || 0))
-      .slice(0, 10);
-    if (moreModels.length > 0) {
-      const moreGrid = document.createElement("div");
-      moreGrid.className = "model-grid";
-      moreGrid.hidden = true;
-      moreModels.forEach((model) => moreGrid.appendChild(modelBadge(model, provider.color)));
-
-      const expandedLabel = "Show fewer";
-      const collapsedLabel = `+ ${moreModels.length} more from OpenRouter's live catalog`;
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "secondary show-more-btn";
-      toggle.textContent = collapsedLabel;
-      toggle.addEventListener("click", () => {
-        moreGrid.hidden = !moreGrid.hidden;
-        toggle.textContent = moreGrid.hidden ? collapsedLabel : expandedLabel;
-      });
-
-      block.appendChild(toggle);
-      block.appendChild(moreGrid);
-    }
-
-    container.appendChild(block);
+    container.appendChild(modelBadge(model, state.catalog.providers[model.provider].color));
   });
 }
 
@@ -484,68 +471,220 @@ function modelBadge(model, color) {
   el.className = "model-badge";
   el.textContent = model.name;
   el.style.setProperty("--accent", color);
-  el.dataset.modelId = model.id;
   el.dataset.target = model.id;
   el.title = "Run via OpenRouter";
-  el.addEventListener("click", () => toggleModel(model.id, el));
-
-  const backends = Object.keys(model.routes || {});
-  if (!backends.length) return el;
-
-  const wrapper = document.createElement("div");
-  wrapper.className = "model-option";
-  wrapper.appendChild(el);
-  const chips = document.createElement("div");
-  chips.className = "backend-chips";
-  backends.forEach((backend) => {
-    const chip = document.createElement("span");
-    chip.className = "backend-chip";
-    chip.textContent = backend === "bedrock" ? "Bedrock" : backend === "vertex" ? "Vertex" : "Foundry";
-    chip.title = `Also run via ${BACKEND_LABELS[backend]}`;
-    chip.dataset.target = `${model.id}@${backend}`;
-    chip.addEventListener("click", () => toggleBackendTarget(`${model.id}@${backend}`, chip));
-    chips.appendChild(chip);
-  });
-  wrapper.appendChild(chips);
-  return wrapper;
+  el.addEventListener("click", () => toggleTarget(model.id));
+  return el;
 }
 
-function toggleBackendTarget(target, chip) {
+function renderTagFilters() {
+  const root = document.getElementById("tag-filters");
+  const tagData = state.catalog.tags;
+  root.innerHTML = "";
+  [["need", "What do you need?"], ["industry", "Industry"]].forEach(([kind, heading]) => {
+    const row = document.createElement("div");
+    row.className = "tag-row";
+    const label = document.createElement("span");
+    label.className = "tag-row-label";
+    label.textContent = heading;
+    row.appendChild(label);
+    tagData.tags.filter((t) => t.kind === kind).forEach((tag) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "tag-chip";
+      chip.dataset.tagId = tag.id;
+      chip.textContent = tag.label;
+      chip.setAttribute("aria-pressed", "false");
+      chip.addEventListener("click", () => {
+        if (state.activeTags.has(tag.id)) state.activeTags.delete(tag.id);
+        else state.activeTags.add(tag.id);
+        applyFilters();
+      });
+      row.appendChild(chip);
+    });
+    root.appendChild(row);
+  });
+
+  const why = document.createElement("div");
+  why.id = "tag-why";
+  root.appendChild(why);
+
+  const status = document.createElement("div");
+  status.className = "filter-status";
+  const count = document.createElement("span");
+  count.id = "filter-count";
+  count.setAttribute("aria-live", "polite");
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.id = "clear-filters";
+  clear.className = "secondary";
+  clear.textContent = "Clear filters";
+  clear.addEventListener("click", () => {
+    state.activeTags.clear();
+    applyFilters();
+  });
+  status.appendChild(count);
+  status.appendChild(clear);
+  root.appendChild(status);
+
+  const note = document.createElement("p");
+  note.className = "tag-disclaimer";
+  note.textContent = `Tags curated as of ${tagData.verified}. A starting point, not a benchmark — verify on your own.`;
+  root.appendChild(note);
+}
+
+// Filtering only hides rows; it never touches state.selectedModels.
+function applyFilters() {
+  const active = Array.from(state.activeTags);
+  const curated = Object.values(state.catalog.providers).flatMap((p) => p.models);
+  const visible = new Set(PickerCore.filterModels(curated, active).map((m) => m.id));
+
+  document.querySelectorAll(".curated-rows .model-row").forEach((row) => {
+    row.hidden = !visible.has(row.dataset.modelId);
+  });
+  document.querySelectorAll(".live-group").forEach((group) => {
+    group.hidden = active.length > 0; // live extras have no tags
+  });
+  document.querySelectorAll(".provider-dropdown").forEach((details) => {
+    const hasMatch = !!details.querySelector(".curated-rows .model-row:not([hidden])");
+    details.hidden = active.length > 0 && !hasMatch;
+    if (active.length > 0 && hasMatch) details.open = true;
+  });
+
+  document.querySelectorAll(".tag-chip").forEach((chip) => {
+    chip.setAttribute("aria-pressed", String(state.activeTags.has(chip.dataset.tagId)));
+  });
+  const why = document.getElementById("tag-why");
+  why.innerHTML = "";
+  active.forEach((id) => {
+    const tag = state.catalog.tags.tags.find((t) => t.id === id);
+    const p = document.createElement("p");
+    p.className = "tag-why";
+    p.textContent = `${tag.label}: ${tag.why}`;
+    why.appendChild(p);
+  });
+  document.getElementById("filter-count").textContent = `Showing ${visible.size} of ${curated.length} models`;
+  document.getElementById("clear-filters").hidden = active.length === 0;
+}
+
+function modelRow(model, color) {
+  const row = document.createElement("div");
+  row.className = "model-row";
+  row.dataset.modelId = model.id;
+  row.style.setProperty("--accent", color);
+
+  const name = document.createElement("span");
+  name.className = "model-row-name";
+  name.textContent = model.name;
+  row.appendChild(name);
+
+  if (model.reasoning) {
+    const badge = document.createElement("span");
+    badge.className = "reasoning-badge";
+    badge.textContent = "Reasoning";
+    badge.title = "Supports extended reasoning";
+    row.appendChild(badge);
+  }
+  (model.tags || []).forEach((id) => {
+    const pill = document.createElement("span");
+    pill.className = "tag-pill";
+    pill.textContent = tagLabel(id);
+    row.appendChild(pill);
+  });
+
+  const checks = document.createElement("div");
+  checks.className = "backend-checks";
+  PickerCore.targetsForModel(model).forEach(({ target, backend }) => {
+    const label = document.createElement("label");
+    label.className = "backend-check-label";
+    label.title = `Run via ${BACKEND_LABELS[backend]}`;
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "backend-check";
+    box.dataset.target = target;
+    box.setAttribute("aria-label", `${model.name} via ${BACKEND_LABELS[backend]}`);
+    box.addEventListener("change", () => toggleTarget(target));
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(BACKEND_SHORT[backend]));
+    checks.appendChild(label);
+  });
+  row.appendChild(checks);
+  return row;
+}
+
+function renderProviders(providers) {
+  const container = document.getElementById("provider-list");
+  container.innerHTML = "";
+  Object.entries(providers).forEach(([providerId, provider]) => {
+    const details = document.createElement("details");
+    details.className = "provider-dropdown";
+    details.dataset.provider = providerId;
+    details.style.setProperty("--accent", provider.color);
+
+    const summary = document.createElement("summary");
+    const nameEl = document.createElement("span");
+    nameEl.className = "provider-name";
+    nameEl.textContent = providerId;
+    const countEl = document.createElement("span");
+    countEl.className = "provider-count";
+    countEl.textContent = `${provider.models.length} models`;
+    const selectedEl = document.createElement("span");
+    selectedEl.className = "provider-selected";
+    summary.append(nameEl, countEl, selectedEl);
+    details.appendChild(summary);
+
+    const blurb = document.createElement("p");
+    blurb.className = "provider-blurb";
+    blurb.textContent = provider.blurb;
+    details.appendChild(blurb);
+
+    const curatedRows = document.createElement("div");
+    curatedRows.className = "curated-rows";
+    provider.models.forEach((model) => curatedRows.appendChild(modelRow(model, provider.color)));
+    details.appendChild(curatedRows);
+
+    const curatedIds = new Set(provider.models.map((m) => m.id));
+    const moreModels = state.allModels
+      .filter((m) => m.id.startsWith(`${providerId}/`) && !curatedIds.has(m.id) && !m.id.includes(":batch"))
+      .sort((a, b) => (b.created || 0) - (a.created || 0))
+      .slice(0, 10);
+    if (moreModels.length > 0) {
+      const group = document.createElement("div");
+      group.className = "live-group";
+      const heading = document.createElement("p");
+      heading.className = "live-heading";
+      heading.textContent = "More from OpenRouter's live catalog";
+      group.appendChild(heading);
+      moreModels.forEach((model) => group.appendChild(modelRow(model, provider.color)));
+      details.appendChild(group);
+    }
+    container.appendChild(details);
+  });
+}
+
+async function toggleTarget(target) {
   if (state.selectedModels.has(target)) {
     state.selectedModels.delete(target);
-  } else {
-    if (atCap()) {
-      document.getElementById("run-status").textContent = capMessage();
-      return;
-    }
-    state.selectedModels.add(target);
+    syncSelectionVisuals();
+    return;
   }
+  if (atCap()) {
+    document.getElementById("run-status").textContent = capMessage();
+    syncSelectionVisuals(); // un-check a box the browser just ticked
+    return;
+  }
+  state.selectedModels.add(target);
   syncSelectionVisuals();
-  updateSelectionMeta();
-  syncRegionWarnings();
-}
-
-async function toggleModel(modelId, el) {
-  if (state.selectedModels.has(modelId)) {
-    state.selectedModels.delete(modelId);
-    syncSelectionVisuals();
-    updateSelectionMeta();
-    syncRegionWarnings();
-  } else {
-    if (atCap()) {
-      document.getElementById("run-status").textContent = capMessage();
-      return;
-    }
-    state.selectedModels.add(modelId);
-    syncSelectionVisuals();
-    updateSelectionMeta();
-    syncRegionWarnings();
-    const resp = await fetch(`/api/suggest?model_id=${encodeURIComponent(modelId)}`);
+  if (targetBackend(target) !== "openrouter") return;
+  try {
+    const resp = await fetch(`/api/suggest?model_id=${encodeURIComponent(target)}`);
     const data = await resp.json();
     if (data.suggestions.length) {
       const names = data.suggestions.map((m) => m.name).join(", ");
       document.getElementById("run-status").textContent = `Also consider: ${names}`;
     }
+  } catch (e) {
+    // suggestions are a convenience; fail soft
   }
 }
 
@@ -561,16 +700,14 @@ function addCustomModel() {
   state.customModels.push(modelId);
   input.value = "";
   renderCustomModels();
-  updateSelectionMeta();
-  syncRegionWarnings();
+  syncSelectionVisuals();
 }
 
 function removeCustomModel(modelId) {
   state.selectedModels.delete(modelId);
   state.customModels = state.customModels.filter((id) => id !== modelId);
   renderCustomModels();
-  updateSelectionMeta();
-  syncRegionWarnings();
+  syncSelectionVisuals();
 }
 
 function renderCustomModels() {
@@ -636,7 +773,9 @@ function estimateCost() {
 }
 
 function updateSelectionMeta() {
-  document.getElementById("selection-count").textContent = `Selected ${state.selectedModels.size} / ${maxModels()}`;
+  const countText = `Selected ${state.selectedModels.size} / ${maxModels()}`;
+  document.getElementById("selection-count").textContent = countText;
+  document.getElementById("selection-counter").textContent = countText;
   const el = document.getElementById("cost-estimate");
   if (state.selectedModels.size === 0) {
     el.textContent = "";
@@ -979,8 +1118,6 @@ function tryIt(oldTarget, newTarget) {
     renderCustomModels();
   }
   syncSelectionVisuals();
-  updateSelectionMeta();
-  syncRegionWarnings();
   status.textContent = `Swapped ${oldTarget} → ${newTarget}. Click Run comparison to test it.`;
 }
 
