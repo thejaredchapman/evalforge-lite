@@ -590,3 +590,11 @@ def test_api_run_evaluation_gateway_error_never_leaks_secret(caplog):
     assert secret not in caplog.text
     history_resp = _client().get("/api/runs")
     assert secret not in history_resp.get_data(as_text=True)
+
+
+def test_api_catalog_includes_tags_and_model_tags():
+    data = _client().get("/api/catalog").get_json()
+    assert data["tags"]["verified"]
+    assert {t["id"] for t in data["tags"]["tags"]} >= {"coding", "healthcare"}
+    gpt5 = next(m for m in data["providers"]["openai"]["models"] if m["id"] == "openai/gpt-5")
+    assert gpt5["tags"] and gpt5["reasoning"] is True
