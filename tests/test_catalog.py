@@ -263,3 +263,25 @@ def test_fetch_openrouter_models_keeps_pricing(mock_get):
     assert models["a/priced"]["pricing"] == {"prompt": 0.000001, "completion": 0.000002}
     assert models["a/free-form"]["pricing"] is None
     assert models["a/none"]["pricing"] is None
+
+
+def test_price_for_native_id_matches_bedrock_geo_template():
+    cat = catalog.load_catalog()
+    price = catalog.price_for_native_id(cat, "bedrock", "{geo}.anthropic.claude-haiku-4-5-20251001-v1:0")
+    assert price == {"input_per_m": 1.0, "output_per_m": 5.0}
+
+
+def test_price_for_native_id_matches_foundry_plain_id():
+    cat = catalog.load_catalog()
+    price = catalog.price_for_native_id(cat, "foundry", "gpt-4o-mini")
+    assert price == {"input_per_m": 0.15, "output_per_m": 0.6}
+
+
+def test_price_for_native_id_returns_none_when_not_found():
+    cat = catalog.load_catalog()
+    assert catalog.price_for_native_id(cat, "bedrock", "not-a-real-model") is None
+
+
+def test_price_for_native_id_returns_none_for_unknown_backend():
+    cat = catalog.load_catalog()
+    assert catalog.price_for_native_id(cat, "openrouter", "openai/gpt-5") is None

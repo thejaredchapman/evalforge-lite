@@ -207,10 +207,19 @@ def call_backend(backend, native_model_id, messages, creds, timeout=60):
     if backend == "openrouter":
         return openrouter.call_model(native_model_id, messages, api_key=backend_creds, timeout=timeout)
     if backend == "bedrock":
-        return bedrock.call_model(native_model_id, messages, backend_creds, timeout=timeout)
-    if backend == "vertex":
-        return vertex.call_model(native_model_id, messages, backend_creds, timeout=timeout)
-    return foundry.call_model(native_model_id, messages, backend_creds, timeout=timeout)
+        result = bedrock.call_model(native_model_id, messages, backend_creds, timeout=timeout)
+    elif backend == "vertex":
+        result = vertex.call_model(native_model_id, messages, backend_creds, timeout=timeout)
+    else:
+        result = foundry.call_model(native_model_id, messages, backend_creds, timeout=timeout)
+
+    # OpenRouter reports its own real cost (handled above); Bedrock/Vertex/Foundry never
+    # do, so judge/policy/verdict calls that hit call_backend directly (not through
+    # call_target, which already prices by catalog model id) would otherwise always show
+    # $0 for these backends. Price by the native id actually sent, "{geo}" template included.
+    price = catalog.price_for_native_id(catalog.load_catalog(), backend, native_model_id)
+    result["cost_usd"] = estimate_cost(price, result.get("input_tokens", 0), result.get("output_tokens", 0))
+    return result
 
 
 def estimate_cost(price, input_tokens, output_tokens):

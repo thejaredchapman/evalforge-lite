@@ -90,6 +90,21 @@ def route_for(catalog_dict, model_id, backend):
     return None
 
 
+def price_for_native_id(catalog_dict, backend, native_model_id):
+    """Find the catalog price for a backend-native model id — what gateway.call_backend
+    receives directly for a judge call (not routed through call_target, which already
+    prices by catalog model id). Native ids are compared literally, including any
+    unresolved "{geo}" template, since that's the same templated id the catalog route
+    stores and the same one judge.py/policy.py pass straight through.
+    """
+    for provider in catalog_dict.values():
+        for model in provider["models"]:
+            route = (model.get("routes") or {}).get(backend)
+            if route and route.get("id") == native_model_id:
+                return route.get("price")
+    return None
+
+
 def find_model(catalog_dict, model_id):
     for provider_id, provider in catalog_dict.items():
         for model in provider["models"]:

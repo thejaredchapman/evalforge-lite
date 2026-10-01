@@ -428,3 +428,28 @@ def test_call_target_foundry_model_without_route_raises():
             "anthropic/claude-opus-4.5@foundry", MESSAGES,
             {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}},
         )
+
+
+@patch("gateway.bedrock.call_model", return_value=dict(FAKE_RESULT))
+def test_call_backend_prices_bedrock_native_id_matching_catalog_route(mock_call):
+    result = gateway.call_backend(
+        "bedrock", "{geo}.anthropic.claude-haiku-4-5-20251001-v1:0", MESSAGES,
+        {"bedrock": {"region": "us-east-1", "api_key": "ABSKexample"}},
+    )
+    # 10 input tokens * $1/M + 20 output tokens * $5/M
+    assert result["cost_usd"] == pytest.approx(0.00011)
+
+
+@patch("gateway.foundry.call_model", return_value=dict(FAKE_RESULT))
+def test_call_backend_unpriced_native_id_is_zero_cost(mock_call):
+    result = gateway.call_backend(
+        "foundry", "some-unknown-model-not-in-catalog", MESSAGES,
+        {"foundry": {"resource": "my-resource", "region": "eastus", "api_key": "fake-api-key-12345678"}},
+    )
+    assert result["cost_usd"] == 0.0
+
+
+@patch("gateway.openrouter.call_model", return_value=dict(FAKE_RESULT, cost_usd=0.0042))
+def test_call_backend_openrouter_keeps_reported_cost_without_catalog_lookup(mock_call):
+    result = gateway.call_backend("openrouter", "openai/gpt-5", MESSAGES, {"openrouter": "sk-or-v1-test"})
+    assert result["cost_usd"] == 0.0042
