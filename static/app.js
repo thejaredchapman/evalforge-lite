@@ -201,14 +201,14 @@ function buildCreds() {
   }
 
   const foundryResource = fieldValue("foundry-resource");
-  if (foundryResource) {
-    const region = fieldValue("foundry-region");
+  const foundryRegion = fieldValue("foundry-region");
+  if (foundryResource && foundryRegion) {
     if (checkedValue("foundry-auth") === "api_key") {
       const apiKey = fieldValue("foundry-api-key");
-      if (apiKey) creds.foundry = { resource: foundryResource, region, api_key: apiKey };
+      if (apiKey) creds.foundry = { resource: foundryResource, region: foundryRegion, api_key: apiKey };
     } else {
       const accessToken = fieldValue("foundry-access-token");
-      if (accessToken) creds.foundry = { resource: foundryResource, region, access_token: accessToken };
+      if (accessToken) creds.foundry = { resource: foundryResource, region: foundryRegion, access_token: accessToken };
     }
   }
   return creds;
