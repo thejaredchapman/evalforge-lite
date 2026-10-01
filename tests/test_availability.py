@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 import availability
 import catalog
 
@@ -9,6 +11,13 @@ def setup_function():
     availability._cache["fetched_at"] = 0.0
     catalog._cache["data"] = None
     catalog._cache["fetched_at"] = 0.0
+
+
+@pytest.fixture(autouse=True)
+def _no_real_http(monkeypatch):
+    def _blocked(*args, **kwargs):
+        raise AssertionError("tests/test_availability.py attempted a real HTTP call")
+    monkeypatch.setattr("catalog.requests.get", _blocked)
 
 
 @patch("availability.catalog.fetch_openrouter_models")
@@ -54,7 +63,8 @@ def test_no_prior_data_and_failed_fetch_marks_everything_unlisted_and_stale(mock
     assert all(not v["listed"] for v in snap["openrouter"]["models"].values())
 
 
-def test_backend_sections_have_curated_metadata_and_model_regions():
+@patch("availability.catalog.fetch_openrouter_models", return_value=[])
+def test_backend_sections_have_curated_metadata_and_model_regions(mock_fetch):
     snap = availability.snapshot(now=1000.0)
     assert set(snap["backends"]) == {"bedrock", "vertex", "foundry"}
     bedrock_section = snap["backends"]["bedrock"]
@@ -66,6 +76,7 @@ def test_backend_sections_have_curated_metadata_and_model_regions():
     assert "openai/gpt-5" in foundry_section["models"]
 
 
-def test_snapshot_includes_generated_at():
+@patch("availability.catalog.fetch_openrouter_models", return_value=[])
+def test_snapshot_includes_generated_at(mock_fetch):
     snap = availability.snapshot(now=1234.5)
     assert snap["generated_at"] == 1234.5
