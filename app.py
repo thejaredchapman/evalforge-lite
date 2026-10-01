@@ -51,6 +51,11 @@ def index():
     return _with_session_cookie(resp, session_id)
 
 
+@app.route("/availability")
+def availability_page():
+    return render_template("availability.html")
+
+
 @app.route("/api/catalog")
 def api_catalog():
     cat = catalog.load_catalog()

@@ -465,3 +465,15 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
 .region-warning-line a { color: inherit; }
 .region-warning-line p { margin: 4px 0; }
 .region-warning-mark { margin-left: 3px; }
+
+.availability-banner { font-size: 13px; color: var(--muted); }
+.availability-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.availability-filter-row label { margin: 0; }
+.availability-filter-row select {
+  font-family: inherit; font-size: 13px; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--fg);
+}
+#availability-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#availability-table th, #availability-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+#availability-table th { cursor: pointer; color: var(--muted); user-select: none; white-space: nowrap; }
+#availability-table th:hover { color: var(--fg); }

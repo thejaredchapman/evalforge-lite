@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Where models run — EvalForge Lite</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem("evalforge-theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <header>
+    <h1>EvalForge <span class="accent-brand">Lite</span></h1>
+    <p class="tagline">Where models run — live OpenRouter listing plus curated Bedrock, Vertex, and Foundry region coverage.</p>
+    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">&#127769;</button>
+  </header>
+
+  <nav class="top-links" aria-label="Site links">
+    <a href="/">Back to comparison</a>
+    <details class="status-menu">
+      <summary>Provider status</summary>
+      <div class="status-menu-panel">
+        <a href="https://status.openrouter.ai" target="_blank" rel="noopener">OpenRouter</a>
+        <a href="https://health.aws.amazon.com/health/status" target="_blank" rel="noopener">AWS</a>
+        <a href="https://status.cloud.google.com" target="_blank" rel="noopener">Google Cloud</a>
+        <a href="https://azure.status.microsoft/en-us/status" target="_blank" rel="noopener">Azure</a>
+      </div>
+    </details>
+  </nav>
+
+  <section id="availability-banner" class="card availability-banner">
+    Not every model is offered in every region. If a model isn't listed for your region, switch regions or backends. Curated data can lag — verify on the provider's page.
+  </section>
+
+  <section id="availability-controls" class="card">
+    <label for="availability-filter">Filter by model or provider</label>
+    <input type="text" id="availability-filter" placeholder="e.g. claude, gpt-5, meta-llama">
+    <div class="availability-filter-row">
+      <label for="availability-backend-filter">Backend</label>
+      <select id="availability-backend-filter">
+        <option value="">All backends</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="bedrock">Amazon Bedrock</option>
+        <option value="vertex">Google Vertex AI</option>
+        <option value="foundry">Microsoft Foundry</option>
+      </select>
+      <label for="availability-region-filter">Region</label>
+      <select id="availability-region-filter">
+        <option value="">All regions</option>
+      </select>
+    </div>
+  </section>
+
+  <section id="availability-meta" class="status-text"></section>
+
+  <section id="availability-table-section" class="card">
+    <table id="availability-table">
+      <thead>
+        <tr>
+          <th data-sort="model" tabindex="0" role="button">Model</th>
+          <th data-sort="provider" tabindex="0" role="button">Provider</th>
+          <th data-sort="openrouter" tabindex="0" role="button">OpenRouter</th>
+          <th data-sort="bedrock" tabindex="0" role="button">Bedrock regions</th>
+          <th data-sort="vertex" tabindex="0" role="button">Vertex regions</th>
+          <th data-sort="foundry" tabindex="0" role="button">Foundry regions</th>
+        </tr>
+      </thead>
+      <tbody id="availability-tbody"></tbody>
+    </table>
+  </section>
+
+  <footer class="page-footer">
+    <a href="https://github.com/thejaredchapman/evalforge-lite/issues/new?template=bug_report.md" target="_blank" rel="noopener">Report an issue</a>
+  </footer>
+
+  <script src="{{ url_for('static', filename='availability.js') }}"></script>
+</body>
+</html>

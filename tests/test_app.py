@@ -528,3 +528,9 @@ def test_api_run_error_response_scrubs_foundry_api_key(caplog):
     body = resp.get_json()
     assert secret not in body["error"]
     assert secret not in caplog.text
+
+
+def test_availability_page_returns_200():
+    resp = _client().get("/availability")
+    assert resp.status_code == 200
+    assert b"availability-table" in resp.data
