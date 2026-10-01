@@ -184,7 +184,7 @@ card shows "Evaluation unavailable" and that response is simply excluded
 from the evaluation half of Quality — it never fails the run.
 
 Each side-by-side column also shows "Overall eval x/5" and how its average
-response time compares to the fastest model in the run (e.g. "1.8× slower
+response time compares to the fastest model in the run (e.g. "1.8x slower
 than fastest (2,340 ms)", or "Fastest"). A **Latency comparison** panel
 below the leaderboard shows this per-prompt as a bar per model (fastest
 highlighted), with the run's averages at the bottom.
@@ -277,8 +277,10 @@ everything a plain run does plus:
 - `cost` — `{"model_usd", "judge_usd", "total_usd", "judge_calls"}` for the
   whole run (estimated for Bedrock/Vertex/Foundry calls, both model and
   judge).
-- Each result cell gains `evaluation` — the per-response evaluation (or
-  `{"available": false, "reason": "Evaluation unavailable."}`).
+- Each successful result cell gains `evaluation` — the per-response
+  evaluation (or `{"available": false, "reason": "Evaluation unavailable."}`
+  if that call failed or was unparseable). Blocked and error cells have no
+  `evaluation` key.
 - `stats[<model>]` gains `evaluation_avg` and `latency_vs_fastest`.
 - Each result row gains `latency_ranking` — that prompt's successful
   targets ordered fastest-first with their latency in ms.
