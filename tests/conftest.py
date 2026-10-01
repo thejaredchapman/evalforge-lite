@@ -19,3 +19,5 @@ def _isolate_server_key_env(monkeypatch):
     """Server-held keys are opt-in via env; no test may depend on the developer's real environment."""
     for name in SERVER_KEY_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+    import limiter
+    limiter._server_key_calls.clear()
