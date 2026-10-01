@@ -30,6 +30,7 @@ function providerOf(modelId, catalogProviders) {
 }
 
 function buildRows(data) {
+  if (!data) return [];
   const orModels = (data.availability.openrouter && data.availability.openrouter.models) || {};
   return Object.keys(orModels).map((modelId) => ({
     model: modelId,
@@ -57,6 +58,7 @@ function matchesFilters(row) {
   if (backend === "openrouter" && !row.openrouter) return false;
   if ((backend === "bedrock" || backend === "vertex" || backend === "foundry") && row[backend].length === 0) return false;
   if (region) {
+    if (backend === "openrouter") return false; // OpenRouter has no regions; never matches a region filter.
     const backendsToCheck = backend ? [backend] : ["bedrock", "vertex", "foundry"];
     if (!backendsToCheck.some((b) => row[b].includes(region))) return false;
   }
@@ -83,7 +85,17 @@ function sortRows(rows) {
 function renderTable() {
   const tbody = document.getElementById("availability-tbody");
   tbody.innerHTML = "";
+  if (!state.data) return;
   const rows = sortRows(buildRows(state.data).filter(matchesFilters));
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 6;
+    td.textContent = "No models match the current filters.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
   rows.forEach((row) => {
     const tr = document.createElement("tr");
     const cells = [
@@ -172,15 +184,36 @@ function setupSorting() {
   updateSortIndicators();
 }
 
+function showLoadError() {
+  state.data = null;
+  const meta = document.getElementById("availability-meta");
+  meta.innerHTML = "";
+  const p = document.createElement("p");
+  p.textContent = "Couldn't load availability data — the server may be down. Try refreshing.";
+  meta.appendChild(p);
+  const tbody = document.getElementById("availability-tbody");
+  tbody.innerHTML = "";
+}
+
+async function fetchJson(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`${url} responded with ${resp.status}`);
+  return resp.json();
+}
+
 async function load() {
-  const [availabilityResp, catalogResp] = await Promise.all([
-    fetch("/api/availability").then((r) => r.json()),
-    fetch("/api/catalog").then((r) => r.json()),
-  ]);
-  state.data = { availability: availabilityResp, catalog: catalogResp.providers };
-  populateRegionFilter(state.data);
-  renderMeta(state.data);
-  renderTable();
+  try {
+    const [availabilityResp, catalogResp] = await Promise.all([
+      fetchJson("/api/availability"),
+      fetchJson("/api/catalog"),
+    ]);
+    state.data = { availability: availabilityResp, catalog: catalogResp.providers };
+    populateRegionFilter(state.data);
+    renderMeta(state.data);
+    renderTable();
+  } catch (e) {
+    showLoadError();
+  }
 }
 
 document.getElementById("availability-filter").addEventListener("input", renderTable);
