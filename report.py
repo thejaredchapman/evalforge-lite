@@ -42,6 +42,8 @@ _CSV_FIELDS = [
     "judge_rationale", "checks_passed", "checks_total", "cost_usd", "latency_ms", "tokens", "tokens_per_sec",
     "accuracy_score", "rule_checks_score", "cost_efficiency_score", "response_time_score", "throughput_score",
     "best_model_for_prompt", "best_model_reason",
+    "answered_score", "overall_eval", "quality_score", "instruction_following_score", "completeness_score",
+    "helpfulness_score", "safety_score",
 ]
 
 
@@ -137,6 +139,16 @@ def build_pdf(run_result, priority=None):
         pdf.cell(
             0, 6, _pdf_safe(f"Priority: {grading.PRIORITY_LABELS[priority]} - best pick: {best_pick}"), **_NEW_LINE
         )
+        pdf.set_text_color(0, 0, 0)
+
+    cost = run_result.get("cost")
+    if cost:
+        pdf.set_font("Courier", "", 9)
+        pdf.set_text_color(120, 120, 120)
+        pdf.cell(0, 6, _pdf_safe(
+            f"Total cost: ~${cost['total_usd']:.4f} (models ${cost['model_usd']:.4f} + "
+            f"judge ${cost['judge_usd']:.4f}, {cost['judge_calls']} judge calls)"
+        ), **_NEW_LINE)
         pdf.set_text_color(0, 0, 0)
     pdf.ln(2)
 
@@ -289,9 +301,39 @@ def build_pdf(run_result, priority=None):
                 if cell.get("judge_score") is not None:
                     judge_rationale = _pdf_safe(cell.get("judge_rationale"))
                     pdf.multi_cell(0, 5, f"    judge score: {cell['judge_score']}/5 - {judge_rationale}", **_NEW_LINE)
+                evaluation = cell.get("evaluation")
+                if evaluation and evaluation.get("available"):
+                    answered_score = (evaluation.get("answered") or {}).get("score")
+                    answered_text = f"{answered_score}/5" if answered_score is not None else "n/a"
+                    pdf.multi_cell(
+                        0, 5, _pdf_safe(f"    eval: overall {evaluation.get('overall')}/5, answered {answered_text}"),
+                        **_NEW_LINE,
+                    )
+                elif evaluation:
+                    pdf.multi_cell(0, 5, "    eval: Evaluation unavailable.", **_NEW_LINE)
         pdf.ln(2)
 
     return bytes(pdf.output())
+
+
+def _eval_csv_values(cell):
+    evaluation = cell.get("evaluation") or {}
+    if not evaluation.get("available"):
+        return ["", "", "", "", "", "", ""]
+
+    def score(key):
+        value = (evaluation.get(key) or {}).get("score")
+        return value if value is not None else ""
+
+    return [
+        score("answered"),
+        evaluation.get("overall", ""),
+        score("quality"),
+        score("instruction_following"),
+        score("completeness"),
+        score("helpfulness"),
+        score("safety"),
+    ]
 
 
 def build_csv(run_result):
@@ -317,19 +359,20 @@ def build_csv(run_result):
                 categories.get("throughput", ""),
             ]
             category_values = [v if v is not None else "" for v in category_values]
+            eval_values = _eval_csv_values(cell)
 
             if cell.get("blocked"):
                 writer.writerow([
                     prompt, model_id, "blocked", "", "",
                     f"{cell.get('policy_clause')}: {cell.get('policy_reason')}",
                     "", "", "", "", "", "",
-                    *category_values, best_model_id, best_model_reason,
+                    *category_values, best_model_id, best_model_reason, *eval_values,
                 ])
             elif cell.get("error"):
                 writer.writerow([
                     prompt, model_id, "error", cell.get("error"), "",
                     "", "", "", "", "", "", "",
-                    *category_values, best_model_id, best_model_reason,
+                    *category_values, best_model_id, best_model_reason, *eval_values,
                 ])
             else:
                 checks = cell.get("checks") or []
@@ -341,7 +384,7 @@ def build_csv(run_result):
                     checks_passed, len(checks),
                     cell.get("cost_usd"), cell.get("latency_ms"), cell.get("tokens"),
                     cell.get("tokens_per_sec") if cell.get("tokens_per_sec") is not None else "",
-                    *category_values, best_model_id, best_model_reason,
+                    *category_values, best_model_id, best_model_reason, *eval_values,
                 ])
 
     return buffer.getvalue()

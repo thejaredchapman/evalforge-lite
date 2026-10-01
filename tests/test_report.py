@@ -130,6 +130,8 @@ def test_build_csv_returns_string_with_header_row():
         "judge_rationale", "checks_passed", "checks_total", "cost_usd", "latency_ms", "tokens", "tokens_per_sec",
         "accuracy_score", "rule_checks_score", "cost_efficiency_score", "response_time_score", "throughput_score",
         "best_model_for_prompt", "best_model_reason",
+        "answered_score", "overall_eval", "quality_score", "instruction_following_score", "completeness_score",
+        "helpfulness_score", "safety_score",
     ]
 
 
@@ -233,3 +235,85 @@ def test_pdf_shows_approx_tokens_per_sec_and_reasoning_footnote():
     text = _pdf_text(pdf_bytes)
     assert "~42" in text
     assert "~ = approximate" in text
+
+
+_SAMPLE_EVALUATION = {
+    "available": True,
+    "answered": {"score": 5, "explanation": "Fully answered."},
+    "quality": {"score": 4, "explanation": "Clear."},
+    "instruction_following": {"score": 5, "explanation": "Followed."},
+    "completeness": {"score": 4, "explanation": "Mostly complete."},
+    "helpfulness": {"score": 5, "explanation": "Helpful."},
+    "safety": {"score": 5, "explanation": "Safe."},
+    "strengths": ["Clear"], "weaknesses": [], "reasoning": "Good overall.", "overall": 5,
+}
+
+
+def test_build_csv_includes_evaluation_scores_when_available():
+    run = _sample_run_result()
+    first_cell = next(iter(run["results"][0]["cells"].values()))
+    first_cell["evaluation"] = _SAMPLE_EVALUATION
+    csv_text = report.build_csv(run)
+    reader = csv.DictReader(io.StringIO(csv_text))
+    row = next(reader)
+    assert row["answered_score"] == "5"
+    assert row["overall_eval"] == "5"
+    assert row["quality_score"] == "4"
+    assert row["instruction_following_score"] == "5"
+    assert row["completeness_score"] == "4"
+    assert row["helpfulness_score"] == "5"
+    assert row["safety_score"] == "5"
+
+
+def test_build_csv_evaluation_columns_blank_when_unavailable():
+    csv_text = report.build_csv(_sample_run_result())
+    reader = csv.DictReader(io.StringIO(csv_text))
+    row = next(reader)
+    assert row["answered_score"] == ""
+    assert row["overall_eval"] == ""
+    assert row["safety_score"] == ""
+
+
+def test_build_csv_evaluation_columns_blank_for_blocked_and_error_cells():
+    csv_text = report.build_csv(_sample_run_result(include_block=True, include_error=True))
+    reader = csv.DictReader(io.StringIO(csv_text))
+    for row in reader:
+        if row["status"] != "ok":
+            assert row["answered_score"] == ""
+            assert row["overall_eval"] == ""
+
+
+def test_pdf_includes_total_cost_line():
+    run = _sample_run_result()
+    run["cost"] = {"model_usd": 0.0101, "judge_usd": 0.0022, "total_usd": 0.0123, "judge_calls": 3}
+    pdf_bytes = report.build_pdf(run)
+    text = _pdf_text(pdf_bytes)
+    assert "Total cost" in text
+    assert "0.0123" in text
+    assert "0.0101" in text
+    assert "0.0022" in text
+    assert "3 judge calls" in text
+
+
+def test_pdf_includes_response_evaluation_when_available():
+    run = _sample_run_result()
+    first_cell = next(iter(run["results"][0]["cells"].values()))
+    first_cell["evaluation"] = _SAMPLE_EVALUATION
+    pdf_bytes = report.build_pdf(run)
+    text = _pdf_text(pdf_bytes)
+    assert "overall 5/5" in text
+    assert "answered 5/5" in text
+
+
+def test_pdf_shows_evaluation_unavailable_when_judge_failed():
+    run = _sample_run_result()
+    first_cell = next(iter(run["results"][0]["cells"].values()))
+    first_cell["evaluation"] = {"available": False, "reason": "Evaluation unavailable."}
+    pdf_bytes = report.build_pdf(run)
+    text = _pdf_text(pdf_bytes)
+    assert "Evaluation unavailable." in text
+
+
+def test_pdf_builds_without_cost_or_evaluation_keys_present():
+    pdf_bytes = report.build_pdf(_sample_run_result())
+    assert pdf_bytes.startswith(b"%PDF")
