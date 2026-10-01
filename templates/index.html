@@ -134,7 +134,10 @@
     <h2>Frontier models</h2>
     <div id="frontier-list" class="model-grid"></div>
 
+    <div id="selection-counter" class="selection-counter" aria-live="polite">Selected 0 / 4</div>
+
     <h2>Browse by provider</h2>
+    <div id="tag-filters" class="tag-filters"></div>
     <div id="provider-list"></div>
 
     <h2>Custom model ID</h2>
@@ -260,6 +263,7 @@
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='picker-core.js') }}"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
