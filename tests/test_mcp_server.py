@@ -473,3 +473,9 @@ def test_run_comparison_error_hides_server_held_foundry_resource(monkeypatch):
             test_cases=[{"prompt": "q1"}], models=["openai/gpt-5@foundry"], judge_backend="foundry",
         )
     assert "acme-secret-resource" not in json.dumps(result)
+
+
+def test_list_models_includes_tags():
+    result = mcp_server.list_models()
+    assert result["tags"]["verified"]
+    assert any(t["id"] == "coding" for t in result["tags"]["tags"])
