@@ -23,6 +23,16 @@ mcp = MCPServer("evalforge-lite")
 _RATE_LIMIT_KEY = "mcp-server"
 _EVALUATE_RATE_LIMIT_KEY = "mcp-server:evaluate"
 
+
+def _server_cap_refusal(held, targets, judge_backend):
+    """Refusal dict when this call needs a server-held backend and the shared daily cap is spent, else None."""
+    if not set(held) & gateway.backends_used(targets, judge_backend):
+        return None
+    result = limiter.check_and_record_server_key(time.time())
+    if result["allowed"]:
+        return None
+    return {"error": "rate_limited", "reset_at": result["reset_at"], "message": limiter.SERVER_CAP_MESSAGE}
+
 _policy_text = None
 _run_history = deque(maxlen=5)
 
@@ -73,18 +83,22 @@ def evaluate_prompt(prompt: str, api_key: str = "", creds: dict | None = None,
     "bedrock"?: {...}, "vertex"?: {...}, "foundry"?: {...}} to use Amazon Bedrock,
     Google Vertex AI, or Microsoft Foundry; a bare `api_key` is treated as an
     OpenRouter key. `judge_backend` picks which backend runs the evaluation.
+    If the operator has set server-side keys for a backend (see README "Server-side keys"), those are used for it automatically and creds for it are not needed.
     """
-    raw_creds = gateway.normalize_creds(creds, api_key)
+    raw_creds, held = gateway.merge_server_creds(gateway.normalize_creds(creds, api_key))
     if raw_creds is None:
         return {"error": "Missing required field: creds (or api_key)."}
     if judge_backend not in gateway.BACKENDS:
         return {"error": "Invalid judge_backend."}
     prepared, creds_error = gateway.check_run_creds(raw_creds, [], judge_backend)
     if creds_error:
-        return {"error": creds_error}
+        return {"error": scrub.scrub(creds_error, raw_creds)}
     limit_result = limiter.check_and_record(_EVALUATE_RATE_LIMIT_KEY, time.time())
     if not limit_result["allowed"]:
         return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
+    refusal = _server_cap_refusal(held, [], judge_backend)
+    if refusal:
+        return refusal
     return judge.evaluate_prompt(prompt, creds=prepared, backend=judge_backend)
 
 
@@ -105,10 +119,11 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
     provider and backend only), advice, ranking, and best_for_priority, plus a per-run
     `cost` total and, per cell, an `evaluation` (answered/quality/instruction_following/
     completeness/helpfulness/safety scores, strengths, weaknesses, reasoning, overall).
+    If the operator has set server-side keys for a backend (see README "Server-side keys"), those are used for it automatically and creds for it are not needed.
     """
     if not isinstance(models, list) or any(not isinstance(m, str) or not m.strip() for m in models):
         return {"error": "Model ids must be non-empty strings."}
-    raw_creds = gateway.normalize_creds(creds, api_key)
+    raw_creds, held = gateway.merge_server_creds(gateway.normalize_creds(creds, api_key))
     if raw_creds is None:
         return {"error": "Missing required field: creds (or api_key)."}
     if judge_backend not in gateway.BACKENDS:
@@ -121,11 +136,14 @@ def run_comparison(test_cases: list[dict], models: list[str], api_key: str = "",
         return {"error": "repeats must be 1, 2, or 3."}
     prepared, creds_error = gateway.check_run_creds(raw_creds, models, judge_backend)
     if creds_error:
-        return {"error": creds_error}
+        return {"error": scrub.scrub(creds_error, raw_creds)}
 
     limit_result = limiter.check_and_record(_RATE_LIMIT_KEY, time.time())
     if not limit_result["allowed"]:
         return {"error": "rate_limited", "reset_at": limit_result["reset_at"]}
+    refusal = _server_cap_refusal(held, models, judge_backend)
+    if refusal:
+        return refusal
 
     try:
         meter = costs.CostMeter()

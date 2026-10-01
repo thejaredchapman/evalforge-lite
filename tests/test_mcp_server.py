@@ -418,6 +418,63 @@ def test_run_comparison_evaluation_gateway_error_never_leaks_secret():
     assert secret not in json.dumps(runs)
 
 
+MCP_SERVER_KEY = "sk-or-v1-server-secret-123456"
+
+
+@patch("mcp_server.runner.run")
+@patch("mcp_server.judge.overall_verdict")
+def test_run_comparison_uses_server_key_without_client_creds(mock_verdict, mock_run, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", MCP_SERVER_KEY)
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"])
+    assert "error" not in result
+    assert mock_run.call_args.kwargs["creds"]["openrouter"] == MCP_SERVER_KEY
+
+
+@patch("mcp_server.judge.evaluate_prompt")
+def test_evaluate_prompt_uses_server_key_and_respects_cap(mock_evaluate, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", MCP_SERVER_KEY)
+    monkeypatch.setenv("SERVER_KEY_DAILY_CAP", "1")
+    mock_evaluate.return_value = {"score": 3, "feedback": "ok"}
+    assert "error" not in mcp_server.evaluate_prompt("hello")
+    second = mcp_server.evaluate_prompt("hello again")
+    assert second["error"] == "rate_limited"
+    assert second["message"] == "The server's shared usage limit has been reached. Please try again later."
+
+
+@patch("mcp_server.runner.run")
+@patch("mcp_server.judge.overall_verdict")
+def test_run_comparison_cap_refusal_and_session_limit_ordering(mock_verdict, mock_run, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", MCP_SERVER_KEY)
+    monkeypatch.setenv("SERVER_KEY_DAILY_CAP", "1")
+    mock_run.return_value = []
+    mock_verdict.return_value = {"winner": None, "rationale": ""}
+    payload = dict(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"])
+    assert "error" not in mcp_server.run_comparison(**payload)
+    refused = mcp_server.run_comparison(**payload)
+    assert refused["error"] == "rate_limited" and "message" in refused
+
+
+def test_run_comparison_error_scrubs_server_key(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", MCP_SERVER_KEY)
+    with patch("mcp_server.runner.run", side_effect=Exception(f"failed using key {MCP_SERVER_KEY}")):
+        result = mcp_server.run_comparison(test_cases=[{"prompt": "q1"}], models=["openai/gpt-5"])
+    assert MCP_SERVER_KEY not in result["error"] and "[REDACTED]" in result["error"]
+
+
+def test_run_comparison_error_hides_server_held_foundry_resource(monkeypatch):
+    monkeypatch.setenv("FOUNDRY_RESOURCE", "acme-secret-resource")
+    monkeypatch.setenv("FOUNDRY_REGION", "eastus2")
+    monkeypatch.setenv("FOUNDRY_API_KEY", "fk")
+    err = "401 Client Error for url: https://acme-secret-resource.services.ai.azure.com/models"
+    with patch("mcp_server.runner.run", side_effect=Exception(err)):
+        result = mcp_server.run_comparison(
+            test_cases=[{"prompt": "q1"}], models=["openai/gpt-5@foundry"], judge_backend="foundry",
+        )
+    assert "acme-secret-resource" not in json.dumps(result)
+
+
 def test_list_models_includes_tags():
     result = mcp_server.list_models()
     assert result["tags"]["verified"]

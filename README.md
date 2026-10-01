@@ -3,7 +3,7 @@
 <!-- mcp-name: io.github.thejaredchapman/evalforge-lite -->
 
 Compare text LLMs across providers — OpenRouter, Amazon Bedrock, Google
-Vertex AI, and Microsoft Foundry — bring your own credentials. Available as
+Vertex AI, and Microsoft Foundry — bring your own credentials (or let the server hold them). Available as
 a web app and as an MCP server.
 
 ## Setup
@@ -11,17 +11,20 @@ a web app and as an MCP server.
     python3.12 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
-    cp .env.example .env   # optional: override the per-backend judge models
+    cp .env.example .env   # optional: judge-model overrides and server-side keys
 
 Requires Python 3.10+ (the `mcp` package's floor); developed and tested on 3.12.
+
+The app does **not** read `.env` by itself. To use the values in it, load them into your shell first: `set -a; source .env; set +a`, then start the app. (Or set the variables in your host's dashboard.)
 
 ## Web app
 
     python app.py
 
 Open http://localhost:8000, add credentials for the backend(s) you want to
-use (never sent anywhere but this server, never stored server-side beyond
-the request), add test cases, pick models, and run. Set `PORT=<port>` to
+use (sent only to this server and not stored beyond the request — unless the
+operator keeps keys on the server, see
+[Server-side keys](#server-side-keys-optional-for-operators)), add test cases, pick models, and run. Set `PORT=<port>` to
 run on a different port, or `FLASK_DEBUG=1` if you need Flask's
 interactive debugger — it's off by default since this app handles live
 credentials.
@@ -49,9 +52,10 @@ restart the server) — see [Notes](#notes).
 
 ## Backends: OpenRouter, Amazon Bedrock, Google Vertex AI, Microsoft Foundry
 
-Every request carries its own credentials — nothing is read from server
-env/config, and credentials are never stored beyond the request that used
-them.
+By default every request carries its own credentials — nothing is read from
+server env/config, and credentials are never stored beyond the request that
+used them. Operators can optionally keep keys on the server instead; see
+[Server-side keys](#server-side-keys-optional-for-operators).
 
 - **OpenRouter** — a single API key.
 - **Amazon Bedrock** — either a Bedrock API key (bearer token) or an AWS
@@ -85,6 +89,128 @@ Foundry's Llama routes are only curated for a handful of regions. The
 region dropdowns warn with a ⚠ when a selected model isn't listed for your
 chosen region on that backend, and suggest which regions it is listed in —
 see [Where models run](#where-models-run) below for the full picture.
+
+## Server-side keys (optional, for operators)
+
+**Skip this section if every user brings their own key** — that is the default and needs no setup.
+
+If you run EvalForge Lite for other people (a team, a demo), you can keep one
+or more provider keys **on the server** instead. The key lives in an
+environment variable, is never sent to the browser, and users just see
+"Provided by this server" in place of the key box.
+
+### How it works
+
+- Set the environment variables for a backend (table below) and restart the app.
+- That backend's tab in the credentials panel now says **Provided by this
+  server** and has no input fields.
+- The server's key always wins: anything a browser sends for that backend is ignored.
+- Backends you do *not* set up work as before — users paste their own key.
+- Your users spend your key, so there is a **shared daily limit** (see below).
+
+### Step 1 — Choose what to set
+
+Set **all** the variables listed for a backend, or that backend stays user-supplied.
+
+| Backend | Variables | Notes |
+|---|---|---|
+| OpenRouter | `OPENROUTER_API_KEY` | One variable. |
+| Amazon Bedrock | `BEDROCK_REGION` **and** `BEDROCK_API_KEY` | Simplest option. |
+| Amazon Bedrock (access keys) | `BEDROCK_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (optional `AWS_SESSION_TOKEN`) | Used only if `BEDROCK_API_KEY` is not set. |
+| Google Vertex AI | `VERTEX_PROJECT` **and** `VERTEX_SERVICE_ACCOUNT_JSON` (optional `VERTEX_REGION`, default `us-central1`) | The JSON text of a service-account key. Short-lived access tokens are not supported on the server. |
+| Microsoft Foundry | `FOUNDRY_RESOURCE`, `FOUNDRY_REGION`, `FOUNDRY_API_KEY` | Entra ID access tokens are not supported on the server (they expire). |
+| Daily limit | `SERVER_KEY_DAILY_CAP` (optional, default `50`) | See [The daily limit](#the-daily-limit). |
+
+### Step 2 — Set them and start the app
+
+**On your own computer (macOS / Linux):**
+
+    export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+    python app.py
+
+Using the `.env` file instead: copy `.env.example` to `.env`, remove the `#`
+from the lines you want and fill in your values, then load it and start:
+
+    set -a; source .env; set +a
+    python app.py
+
+(`.env` is already git-ignored. Never commit it.) In `.env`, keep the Vertex
+JSON on one line inside single quotes, like `.env.example` shows. (Or use the
+`export VERTEX_SERVICE_ACCOUNT_JSON="$(cat service-account.json)"` form below.)
+
+**Bedrock example:**
+
+    export BEDROCK_REGION="us-east-1"
+    export BEDROCK_API_KEY="your-bedrock-api-key"
+
+**Vertex AI example** (puts the whole JSON file into one variable):
+
+    export VERTEX_PROJECT="my-gcp-project"
+    export VERTEX_REGION="us-central1"
+    export VERTEX_SERVICE_ACCOUNT_JSON="$(cat service-account.json)"
+
+**Foundry example:**
+
+    export FOUNDRY_RESOURCE="my-foundry-resource"
+    export FOUNDRY_REGION="eastus2"
+    export FOUNDRY_API_KEY="your-foundry-key"
+
+**On a host such as Render:** open your service → **Environment** → **Add
+Environment Variable**, add the names and values from the table (for Vertex,
+paste the whole JSON as the value), then **redeploy**. **Docker:** use
+`-e NAME=value` or `--env-file`. Never put keys in `render.yaml`, any
+Dockerfile you write, or git.
+
+### Step 3 — Check that it worked
+
+Open the app. The credentials tab for that backend should say **Provided by
+this server** and show no input boxes.
+
+Or check from a terminal (this lists backend names and regions only — never
+keys):
+
+    curl -s http://localhost:8000/api/catalog | python3 -m json.tool | grep -A8 server_backends
+
+### The daily limit
+
+Because users spend *your* key, the server counts every run (and every prompt
+check) that uses a server-held key. The default is **50 per rolling 24 hours,
+shared by everyone**. When it is reached, people see "The server's shared
+usage limit has been reached. Please try again later."
+
+- Change it with `SERVER_KEY_DAILY_CAP`. `0` blocks every call that needs a server-held backend. To let users enter their own keys again, unset that backend's variables.
+- The usual per-browser limit (3 runs per 8 hours) still applies on top.
+- The count lives in memory: restarting the app resets it, and if you run
+  several worker processes each keeps its own count (the included
+  `render.yaml` uses one worker).
+
+### MCP server
+
+The MCP server reads the same variables from the environment it is started in,
+so with them set you can call `run_comparison` and `evaluate_prompt` without
+passing `creds`.
+
+### Safety notes
+
+- Keep keys only in environment variables or your host's secret store — not in
+  code, README files, screenshots, or git.
+- The key is never sent to the browser, and it is removed from error messages.
+- Anyone who can open your site can spend your key (up to the daily limit). For
+  a private tool, put the site behind your own login or VPN, and use a
+  provider key with its own spending limit.
+- To rotate a key: change the variable and restart.
+- To turn the feature off: remove the variables and restart. Users go back to
+  entering their own keys.
+
+### Troubleshooting
+
+- **The tab still shows input boxes.** A required variable is missing or empty
+  (check the table), the app was not restarted, or — for Vertex — the JSON is
+  not valid. Partly configured backends are ignored on purpose.
+- **"Shared usage limit has been reached".** Wait, or raise `SERVER_KEY_DAILY_CAP`.
+- **The app uses a key you did not set up.** If you already export `OPENROUTER_API_KEY` (or the AWS/other variables above) in your shell for other tools, this app will pick it up and use it as a server key. Unset it first if you did not mean that.
+- **Bedrock still asks for a region.** `BEDROCK_REGION` must be set along with a key.
+
 
 ## Comparing up to 4 models
 
@@ -250,7 +376,7 @@ secret_access_key, session_token?}, "vertex"?: {project, region, access_token}
 | {project, region, service_account_json}, "foundry"?: {resource, region, api_key}
 | {resource, region, access_token}}` — plus a `judge_backend` (default
 `"openrouter"`) picking which backend runs the judge and policy gate. Creds for
-the judge backend are always required, and malformed creds for any backend the
+the judge backend are always required (unless the operator holds that backend's credentials on the server, see [Server-side keys](#server-side-keys-optional-for-operators)), and malformed creds for any backend the
 call uses are rejected up front, before the call counts against the rate limit. The
 legacy `api_key` string argument still works and is treated as an
 OpenRouter key (equivalent to `creds={"openrouter": api_key}`).
@@ -323,7 +449,9 @@ way (`gunicorn --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app`), or
 set `HOST=0.0.0.0` if invoking `python app.py` directly. Once deployed,
 the URL is reachable by anyone who has it; each visitor supplies their own
 credentials for whichever backend(s) they use (never yours), so you aren't
-billed for their model usage, but your hosting's bandwidth/CPU is shared
+billed for their model usage — unless you set server-side keys (see
+[Server-side keys](#server-side-keys-optional-for-operators)), in which case
+your key is used and billed, up to the daily limit. Either way, your hosting's bandwidth/CPU is shared
 across everyone who uses it.
 
 ## Test
@@ -413,7 +541,7 @@ field from before the 4-model comparison work, note:
   a live per-account listing. They can go stale as providers add or drop
   regions; verify on the provider's own page if a run fails with a
   region/availability error.
-- All state is in-memory only, capped at 5 runs per session — nothing is
+- All state is in-memory only, keeping the last 5 runs per session — nothing is
   persisted to disk.
 
 ## Contributing
