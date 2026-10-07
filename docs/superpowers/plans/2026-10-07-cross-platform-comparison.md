@@ -588,12 +588,12 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ### Task 5: Docs
 
 **Files:**
-- Modify: `CLAUDE.md` (architecture list, after the `data/regions.json` bullet)
-- Modify: `docs/comparing-models.md` (new section after "## Per-response evaluation" block, before "## Latency comparison")
+- Modify (uncommitted, untracked file): `CLAUDE.md` (architecture list, after the `data/regions.json` bullet)
+- Modify: `docs/comparing-models.md` (new section "Comparing one model across platforms" before "## Latency comparison"; a separate "The judge and the policy gate" section already exists and must not be changed)
 
-- [ ] **Step 1: Add the CLAUDE.md bullet**
+- [ ] **Step 1: Add the CLAUDE.md bullet (edit only; NEVER stage or commit this file)**
 
-After the `**\`data/regions.json\`**` bullet in `CLAUDE.md` add:
+`CLAUDE.md` is untracked in this repo and the owner decided it stays uncommitted. Edit it in place, but do not `git add` it. After the `**\`data/regions.json\`**` bullet in `CLAUDE.md` add:
 
 ```markdown
 - **`data/comparisons.json`** — curated list of cross-platform comparisons (one model on 2-4 of OpenRouter/Bedrock/Vertex/Foundry), loaded by `config.load_comparisons()` and validated/resolved by `catalog.comparison_entries()` into `/api/catalog`'s `comparisons` key, which powers the front-screen "Compare one model across platforms" dropdown. Backend-only by design: there is no UI or API for creating entries (users clone the repo and edit the file). Advisory data like `regions.json`: `gateway.py` never reads it, invalid entries are dropped with a logged warning, and a missing file just hides the dropdown. A test fails if the shipped file drifts from `providers.json`.
@@ -616,10 +616,10 @@ The entries are defined in the backend, in `data/comparisons.json`, and cannot b
 Run: `pytest tests/ -v && node --test tests/js/picker.test.mjs`
 Expected: all PASS
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit (docs/comparing-models.md only; leave CLAUDE.md unstaged)**
 
 ```bash
-git add CLAUDE.md docs/comparing-models.md
+git add docs/comparing-models.md
 git commit -m "docs: document the cross-platform comparison dropdown
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
