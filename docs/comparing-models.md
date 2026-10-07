@@ -134,6 +134,34 @@ Click **Try it** to swap the suggestion into your selection. If the model it rep
 
 **Why it helps:** it points you at the next model worth testing instead of leaving you to browse the catalog.
 
+## The judge and the policy gate: two jobs, one backend
+
+Both are an AI model asked a question, and today both use the model behind the one **Judge & policy backend** setting. They do different jobs at different moments.
+
+**The judge** reads a model's *answer* after the run and scores it. It rates each answer against your rubric from 1 to 5, grades it on six criteria (answered, quality, instruction following, completeness, helpfulness, safety), picks an overall winner and writes the advice. If it can't produce a usable result, that score is left out and the run carries on.
+
+**The policy gate** reads your *prompt* before anything is sent. If you uploaded a company policy, it asks whether the prompt breaks it. If it says yes, that prompt is blocked and the models are never called. If the gate can't give a clear answer for any reason, it treats the prompt as a violation and blocks it.
+
+| | Judge | Policy gate |
+|---|---|---|
+| Reads | The model's answer | Your prompt |
+| When | After the models reply | Before the models are called |
+| Output | Scores and written reasons | Allow or block |
+| If it fails | The score is skipped and the run continues | The prompt is blocked |
+| Main risk | Can favour answers in its own style, and can be wrong or inconsistent | Can block a harmless prompt when it is unsure |
+
+**Pros and cons of the judge**
+- Pro: it can assess open-ended quality that simple rules can't, and it explains its scores.
+- Con: its scores can shift between runs, it can lean toward its own provider's style, and every judging call costs money.
+
+**Pros and cons of the policy gate**
+- Pro: it stops a bad prompt before any model cost is spent, and it errs on the safe side.
+- Con: because it blocks when unsure, an outage or unclear reply stops legitimate prompts too. It only sees the prompt, so it can't catch a problem that appears only in an answer.
+
+**Pros and cons of sharing one backend for both**
+- Pro: one setting and one set of credentials to manage.
+- Con: you can't choose a stricter or cheaper model for the gate than for the judge, and an outage on that backend weakens both at once.
+
 ## Judge disclosure and bias note
 
 The line **Judged by `[model]` via `[backend]`** tells you which model scored the run. If the app can tell from the judge's model id that it belongs to the same provider as a model you compared, a note appears, in this form: "The judge (...) is from the same family as ... — scores may lean in its favor." A judge can favour its own family's writing style, so for an important decision, run again with a judge from a different provider (use **Judge & policy backend**).
