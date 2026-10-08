@@ -103,6 +103,12 @@ The judge is told to treat the response as data and to ignore any instructions w
 
 **Why it helps:** it explains a grade in words, and it works even when you wrote no rubric.
 
+## Comparing one model across platforms
+
+The same model can behave differently depending on where it is deployed: latency, price and sometimes the answers themselves. The **Compare one model across platforms** dropdown on the front screen selects one model on every platform that offers it (for example Llama 4 Maverick on OpenRouter, Bedrock, Vertex and Foundry) in a single click. Clicking an entry replaces your current selection.
+
+The entries are defined in the backend, in `data/comparisons.json`, and cannot be edited from the web app. To test other model and platform combinations, clone the repository and add an entry to that file. Each entry names a catalog model and 2-4 platforms, and every non-OpenRouter platform must have a route for that model in `data/providers.json`. The test suite checks this.
+
 ## Latency comparison
 
 Each column shows how its average response time compares with the fastest target, for example "1.8x slower than fastest (2340 ms)", or "Fastest". The **Latency comparison** panel under the leaderboard shows, for each prompt, a bar per model with the fastest highlighted, and finally "Averages across all prompts".
