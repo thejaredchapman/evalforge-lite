@@ -136,6 +136,18 @@
 
     <div id="selection-counter" class="selection-counter" aria-live="polite">Selected 0 / 4</div>
 
+    <div id="comparison-block" hidden>
+      <h2>Compare one model across platforms</h2>
+      <p class="provider-blurb" id="comparison-note">
+        Cross-platform comparisons are defined in the backend (<code>data/comparisons.json</code>).
+        To test other model/platform combinations, clone the repository and edit that file.
+      </p>
+      <details id="comparison-dropdown" class="provider-dropdown">
+        <summary><span class="provider-name">Choose a comparison</span></summary>
+        <div id="comparison-list"></div>
+      </details>
+    </div>
+
     <h2>Browse by provider</h2>
     <div id="tag-filters" class="tag-filters"></div>
     <div id="provider-list"></div>

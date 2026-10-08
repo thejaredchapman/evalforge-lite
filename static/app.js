@@ -472,6 +472,7 @@ async function loadCatalogAndModels() {
   state.allModels = modelsData.models || [];
 
   renderFrontier(catalogData.frontier);
+  renderComparisons(catalogData.comparisons);
   renderTagFilters();
   renderProviders(catalogData.providers);
   applyFilters();
@@ -519,6 +520,47 @@ function modelBadge(model, color) {
   el.title = "Run via OpenRouter";
   el.addEventListener("click", () => toggleTarget(model.id));
   return el;
+}
+
+function renderComparisons(comparisons) {
+  const block = document.getElementById("comparison-block");
+  const list = document.getElementById("comparison-list");
+  list.innerHTML = "";
+  const entries = comparisons || [];
+  block.hidden = entries.length === 0;
+  entries.forEach((entry) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "comparison-entry";
+    button.style.setProperty("--accent", state.catalog.providers[entry.provider].color);
+    const name = document.createElement("span");
+    name.className = "model-row-name";
+    name.textContent = entry.label;
+    button.appendChild(name);
+    entry.targets.forEach(({ backend }) => {
+      const chip = document.createElement("span");
+      chip.className = "comparison-chip";
+      chip.textContent = BACKEND_SHORT[backend];
+      button.appendChild(chip);
+    });
+    button.addEventListener("click", () => applyComparison(entry));
+    list.appendChild(button);
+  });
+}
+
+// A comparison click REPLACES the selection: it can never exceed the cap, and
+// the server still re-validates the target list on run.
+function applyComparison(entry) {
+  const targets = PickerCore.targetsForComparison(entry, maxModels());
+  if (targets.length === 0) return;
+  state.selectedModels.clear();
+  targets.forEach((target) => state.selectedModels.add(target));
+  state.customModels = [];
+  renderCustomModels();
+  document.getElementById("comparison-dropdown").open = false;
+  document.getElementById("run-status").textContent =
+    `Selected ${entry.model_name} on ${targets.length} platforms.`;
+  syncSelectionVisuals();
 }
 
 function renderTagFilters() {
