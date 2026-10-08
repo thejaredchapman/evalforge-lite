@@ -336,3 +336,96 @@ def test_models_for_tag_returns_ids_carrying_the_tag():
     assert "anthropic/claude-haiku-4.5" in ids
     assert "anthropic/claude-opus-4.5" not in ids
     assert catalog.models_for_tag(cat, "no-such-tag") == []
+
+
+import json as _json
+import logging as _logging
+
+import pytest
+
+
+def _set_comparisons(monkeypatch, entries):
+    monkeypatch.setattr(config, "load_comparisons", lambda: {"verified": "2026-10-07", "comparisons": entries})
+
+
+def _entry(**overrides):
+    base = {
+        "id": "llama-4-maverick-all",
+        "label": "Llama 4 Maverick on all four platforms",
+        "model": "meta-llama/llama-4-maverick",
+        "backends": ["openrouter", "bedrock", "vertex", "foundry"],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_resolve_comparison_builds_targets_in_backend_order():
+    cat = catalog.load_catalog()
+    resolved = catalog.resolve_comparison(cat, _entry())
+    assert resolved["id"] == "llama-4-maverick-all"
+    assert resolved["model_id"] == "meta-llama/llama-4-maverick"
+    assert resolved["model_name"] == "Llama 4 Maverick"
+    assert resolved["provider"] == "meta-llama"
+    assert resolved["targets"] == [
+        {"target": "meta-llama/llama-4-maverick", "backend": "openrouter"},
+        {"target": "meta-llama/llama-4-maverick@bedrock", "backend": "bedrock"},
+        {"target": "meta-llama/llama-4-maverick@vertex", "backend": "vertex"},
+        {"target": "meta-llama/llama-4-maverick@foundry", "backend": "foundry"},
+    ]
+
+
+def test_comparison_problem_accepts_a_valid_entry():
+    assert catalog.comparison_problem(catalog.load_catalog(), _entry()) is None
+
+
+@pytest.mark.parametrize("overrides", [
+    {"model": "nobody/not-a-model"},
+    {"model": "~openai/gpt-latest", "backends": ["openrouter", "foundry"]},
+    {"model": "anthropic/claude-opus-4.5", "backends": ["openrouter", "vertex"]},
+    {"backends": ["openrouter"]},
+    {"backends": ["openrouter", "openrouter"]},
+    {"backends": ["openrouter", "bedrock", "vertex", "foundry", "bedrock"]},
+    {"backends": ["openrouter", "mainframe"]},
+    {"id": ""},
+    {"label": ""},
+])
+def test_comparison_problem_rejects_invalid_entries(overrides):
+    assert catalog.comparison_problem(catalog.load_catalog(), _entry(**overrides)) is not None
+
+
+def test_comparison_entries_drops_invalid_and_duplicate_entries(monkeypatch, caplog):
+    _set_comparisons(monkeypatch, [
+        _entry(),
+        _entry(id="bad", model="nobody/not-a-model"),
+        _entry(),  # duplicate id
+        "not an object",
+    ])
+    with caplog.at_level(_logging.WARNING, logger="catalog"):
+        entries = catalog.comparison_entries(catalog.load_catalog())
+    assert [e["id"] for e in entries] == ["llama-4-maverick-all"]
+    assert "bad" in caplog.text
+
+
+def test_comparison_entries_returns_empty_when_file_missing(monkeypatch):
+    def boom():
+        raise FileNotFoundError("comparisons.json")
+    monkeypatch.setattr(config, "load_comparisons", boom)
+    assert catalog.comparison_entries(catalog.load_catalog()) == []
+
+
+def test_comparison_entries_returns_empty_when_file_malformed(monkeypatch):
+    def boom():
+        raise _json.JSONDecodeError("bad", "", 0)
+    monkeypatch.setattr(config, "load_comparisons", boom)
+    assert catalog.comparison_entries(catalog.load_catalog()) == []
+
+
+def test_shipped_comparisons_file_has_no_invalid_or_duplicate_entries():
+    cat = catalog.load_catalog()
+    entries = config.load_comparisons()["comparisons"]
+    for entry in entries:
+        assert catalog.comparison_problem(cat, entry) is None, entry["id"]
+    ids = [e["id"] for e in entries]
+    assert len(ids) == len(set(ids))
+    assert len(catalog.comparison_entries(cat)) == len(entries)
+    assert all(len(e["targets"]) <= config.MAX_MODELS for e in catalog.comparison_entries(cat))
