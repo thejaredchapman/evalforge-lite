@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 import app as app_module
+import config
 import gateway
 import judge
 import limiter
@@ -740,3 +741,22 @@ def test_index_renders_picker_containers():
     assert 'id="selection-counter"' in html
     assert 'id="provider-list"' in html
     assert "picker-core.js" in html
+
+
+def test_api_catalog_includes_comparisons():
+    data = _client().get("/api/catalog").get_json()
+    comparisons = data["comparisons"]
+    assert len(comparisons) > 0
+    maverick = next(c for c in comparisons if c["id"] == "llama-4-maverick-all")
+    assert [t["backend"] for t in maverick["targets"]] == ["openrouter", "bedrock", "vertex", "foundry"]
+    assert maverick["targets"][1]["target"] == "meta-llama/llama-4-maverick@bedrock"
+    assert len(maverick["targets"]) <= data["max_models"]
+
+
+def test_api_catalog_comparisons_empty_when_file_missing(monkeypatch):
+    def boom():
+        raise FileNotFoundError("comparisons.json")
+    monkeypatch.setattr(config, "load_comparisons", boom)
+    resp = _client().get("/api/catalog")
+    assert resp.status_code == 200
+    assert resp.get_json()["comparisons"] == []
