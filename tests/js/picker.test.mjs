@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { filterModels, targetsForModel, capState } = require("../../static/picker-core.js");
+const { filterModels, targetsForModel, capState, targetsForComparison } = require("../../static/picker-core.js");
 
 const models = [
   { id: "a", tags: ["coding", "reasoning"] },
@@ -46,4 +46,24 @@ test("capState reports cap and remaining", () => {
   assert.deepEqual(capState(3, 4), { atCap: false, remaining: 1 });
   assert.deepEqual(capState(4, 4), { atCap: true, remaining: 0 });
   assert.deepEqual(capState(5, 4), { atCap: true, remaining: 0 });
+});
+
+test("targetsForComparison returns the target ids in order", () => {
+  const entry = {
+    targets: [
+      { target: "meta/x", backend: "openrouter" },
+      { target: "meta/x@bedrock", backend: "bedrock" },
+    ],
+  };
+  assert.deepEqual(targetsForComparison(entry, 4), ["meta/x", "meta/x@bedrock"]);
+});
+
+test("targetsForComparison returns nothing when the entry would exceed the cap", () => {
+  const entry = { targets: [1, 2, 3, 4, 5].map((n) => ({ target: `m${n}`, backend: "openrouter" })) };
+  assert.deepEqual(targetsForComparison(entry, 4), []);
+});
+
+test("targetsForComparison tolerates a malformed entry", () => {
+  assert.deepEqual(targetsForComparison({}, 4), []);
+  assert.deepEqual(targetsForComparison(null, 4), []);
 });
