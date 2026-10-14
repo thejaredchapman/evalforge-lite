@@ -524,12 +524,12 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
 .filter-status button { font-size: 11px; padding: 3px 10px; }
 .tag-disclaimer { font-size: 11px; color: var(--muted); margin: 4px 0 0; }
 
-.provider-dropdown { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: var(--surface); }
-.provider-dropdown > summary { cursor: pointer; padding: 8px 12px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.provider-dropdown, .comparison-dropdown { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: var(--surface); }
+.provider-dropdown > summary, .comparison-dropdown > summary { cursor: pointer; padding: 8px 12px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
 .provider-name { color: var(--accent, var(--fg)); font-weight: bold; }
 .provider-count, .provider-selected { font-size: 11px; color: var(--muted); }
 .provider-selected { color: var(--accent, var(--fg)); }
-.provider-dropdown .provider-blurb { padding: 0 12px; }
+.provider-dropdown .provider-blurb, .comparison-dropdown .provider-blurb { padding: 0 12px; }
 .model-row {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
   padding: 6px 12px; border-top: 1px solid var(--border); font-size: 12px;
@@ -550,7 +550,11 @@ button.secondary { background: var(--surface); color: var(--fg); border: 1px sol
   .backend-checks { margin-left: 0; }
   .tag-row-label { min-width: 100%; }
 }
-.provider-dropdown > summary { list-style: none; }
-.provider-dropdown > summary::-webkit-details-marker { display: none; }
-.provider-dropdown > summary::before { content: "▸"; color: var(--muted); }
-.provider-dropdown[open] > summary::before { content: "▾"; }
+.provider-dropdown > summary, .comparison-dropdown > summary { list-style: none; }
+.provider-dropdown > summary::-webkit-details-marker, .comparison-dropdown > summary::-webkit-details-marker { display: none; }
+.provider-dropdown > summary::before, .comparison-dropdown > summary::before { content: "▸"; color: var(--muted); }
+.provider-dropdown[open] > summary::before, .comparison-dropdown[open] > summary::before { content: "▾"; }
+.comparison-entry { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; width: 100%; box-sizing: border-box; text-align: left; padding: 8px 12px; background: none; border: 0; border-top: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 0; color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
+.comparison-entry:hover, .comparison-entry:focus-visible { background: var(--bg); }
+.comparison-chip { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 0 6px; }
+#comparison-block[hidden] { display: none; }

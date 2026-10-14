@@ -22,7 +22,13 @@
     return { atCap: selectedCount >= max, remaining: Math.max(0, max - selectedCount) };
   }
 
-  const api = { filterModels, targetsForModel, capState };
+  function targetsForComparison(entry, max) {
+    const targets = (entry && entry.targets) || [];
+    if (targets.length === 0 || targets.length > max) return [];
+    return targets.map((t) => t.target);
+  }
+
+  const api = { filterModels, targetsForModel, capState, targetsForComparison };
   root.PickerCore = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(globalThis);

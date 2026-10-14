@@ -15,6 +15,7 @@ _DATA_DIR = Path(__file__).parent / "data"
 _PROVIDERS_PATH = _DATA_DIR / "providers.json"
 _REGIONS_PATH = _DATA_DIR / "regions.json"
 _TAGS_PATH = _DATA_DIR / "tags.json"
+_COMPARISONS_PATH = _DATA_DIR / "comparisons.json"
 
 
 def load_providers():
@@ -29,4 +30,9 @@ def load_regions():
 
 def load_tags():
     with open(_TAGS_PATH) as f:
+        return json.load(f)
+
+
+def load_comparisons():
+    with open(_COMPARISONS_PATH) as f:
         return json.load(f)

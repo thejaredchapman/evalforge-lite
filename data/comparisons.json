@@ -1,0 +1,17 @@
+{
+  "verified": "2026-10-07",
+  "comparisons": [
+    {"id": "llama-4-maverick-all", "label": "Llama 4 Maverick on all four platforms", "model": "meta-llama/llama-4-maverick", "backends": ["openrouter", "bedrock", "vertex", "foundry"]},
+    {"id": "llama-4-scout-all", "label": "Llama 4 Scout on all four platforms", "model": "meta-llama/llama-4-scout", "backends": ["openrouter", "bedrock", "vertex", "foundry"]},
+    {"id": "llama-3-3-70b-all", "label": "Llama 3.3 70B on all four platforms", "model": "meta-llama/llama-3.3-70b-instruct", "backends": ["openrouter", "bedrock", "vertex", "foundry"]},
+    {"id": "claude-opus-4-5-or-vs-bedrock", "label": "Claude Opus 4.5: OpenRouter vs Bedrock", "model": "anthropic/claude-opus-4.5", "backends": ["openrouter", "bedrock"]},
+    {"id": "claude-sonnet-4-5-or-vs-bedrock", "label": "Claude Sonnet 4.5: OpenRouter vs Bedrock", "model": "anthropic/claude-sonnet-4.5", "backends": ["openrouter", "bedrock"]},
+    {"id": "claude-haiku-4-5-or-vs-bedrock", "label": "Claude Haiku 4.5: OpenRouter vs Bedrock", "model": "anthropic/claude-haiku-4.5", "backends": ["openrouter", "bedrock"]},
+    {"id": "gpt-5-or-vs-foundry", "label": "GPT-5: OpenRouter vs Foundry", "model": "openai/gpt-5", "backends": ["openrouter", "foundry"]},
+    {"id": "gpt-5-mini-or-vs-foundry", "label": "GPT-5 Mini: OpenRouter vs Foundry", "model": "openai/gpt-5-mini", "backends": ["openrouter", "foundry"]},
+    {"id": "gpt-4o-or-vs-foundry", "label": "GPT-4o: OpenRouter vs Foundry", "model": "openai/gpt-4o", "backends": ["openrouter", "foundry"]},
+    {"id": "gpt-4o-mini-or-vs-foundry", "label": "GPT-4o Mini: OpenRouter vs Foundry", "model": "openai/gpt-4o-mini", "backends": ["openrouter", "foundry"]},
+    {"id": "gemini-2-5-pro-or-vs-vertex", "label": "Gemini 2.5 Pro: OpenRouter vs Vertex", "model": "google/gemini-2.5-pro", "backends": ["openrouter", "vertex"]},
+    {"id": "gemini-2-5-flash-or-vs-vertex", "label": "Gemini 2.5 Flash: OpenRouter vs Vertex", "model": "google/gemini-2.5-flash", "backends": ["openrouter", "vertex"]}
+  ]
+}

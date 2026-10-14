@@ -1,8 +1,11 @@
+import logging
 import time
 
 import requests
 
 import config
+
+logger = logging.getLogger(__name__)
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 
@@ -130,3 +133,67 @@ def region_availability(catalog_dict, model_id, backend, region):
     route = route_for(catalog_dict, model_id, backend)
     known_regions = list((route or {}).get("regions") or [])
     return {"listed": region in known_regions, "known_regions": known_regions}
+
+
+_COMPARISON_BACKENDS = ("openrouter", "bedrock", "vertex", "foundry")
+
+
+def comparison_problem(catalog_dict, entry):
+    """Why a comparisons.json entry is unusable, or None when it is valid."""
+    if not entry.get("id") or not entry.get("label"):
+        return "missing id or label"
+    model_id = entry.get("model") or ""
+    if model_id.startswith("~"):
+        return "alias models have no stable identity to compare"
+    _, model = find_model(catalog_dict, model_id)
+    if model is None:
+        return f"unknown model {model_id}"
+    backends = entry.get("backends")
+    if not isinstance(backends, list) or len(backends) < 2:
+        return "needs at least 2 backends"
+    if len(set(backends)) != len(backends):
+        return "duplicate backends"
+    if len(backends) > config.MAX_MODELS:
+        return f"more than {config.MAX_MODELS} backends"
+    for backend in backends:
+        if backend not in _COMPARISON_BACKENDS:
+            return f"unknown backend {backend}"
+        if backend != "openrouter" and not route_for(catalog_dict, model_id, backend):
+            return f"{model_id} has no {backend} route"
+    return None
+
+
+def resolve_comparison(catalog_dict, entry):
+    provider_id, model = find_model(catalog_dict, entry["model"])
+    return {
+        "id": entry["id"],
+        "label": entry["label"],
+        "model_id": model["id"],
+        "model_name": model["name"],
+        "provider": provider_id,
+        "targets": [
+            {"target": model["id"] if b == "openrouter" else f"{model['id']}@{b}", "backend": b}
+            for b in entry["backends"]
+        ],
+    }
+
+
+def comparison_entries(catalog_dict):
+    """Valid, resolved cross-platform comparisons. Advisory data: fails soft to []."""
+    try:
+        entries = config.load_comparisons()["comparisons"]
+    except (OSError, ValueError, KeyError, TypeError):
+        logger.warning("comparisons.json is missing or unreadable; no comparisons offered")
+        return []
+    resolved, seen = [], set()
+    for entry in entries:
+        problem = "not an object" if not isinstance(entry, dict) else comparison_problem(catalog_dict, entry)
+        if problem is None and entry["id"] in seen:
+            problem = "duplicate id"
+        if problem is not None:
+            name = entry.get("id") if isinstance(entry, dict) else entry
+            logger.warning("Skipping comparison %r: %s", name, problem)
+            continue
+        seen.add(entry["id"])
+        resolved.append(resolve_comparison(catalog_dict, entry))
+    return resolved

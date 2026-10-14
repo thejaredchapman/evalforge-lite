@@ -69,6 +69,7 @@ def api_catalog():
         "priority_labels": grading.PRIORITY_LABELS,
         "regions": catalog.load_regions(),
         "tags": catalog.load_tags(),
+        "comparisons": catalog.comparison_entries(cat),
         "provider_links": gateway.PROVIDER_LINKS,
         "server_backends": server_creds.public_summary(),
     })

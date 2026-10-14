@@ -45,3 +45,10 @@ def test_max_models_is_four():
 def test_load_regions_returns_dict_with_expected_backends():
     regions = config.load_regions()
     assert set(regions) == {"bedrock", "vertex", "foundry"}
+
+
+def test_load_comparisons_returns_verified_date_and_entries():
+    data = config.load_comparisons()
+    assert data["verified"]
+    assert isinstance(data["comparisons"], list)
+    assert len(data["comparisons"]) > 0
